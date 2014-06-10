@@ -18,7 +18,7 @@ function [ bin_avgs, bin_midpoints ] = plot_vertical_profile( Merge_in, data_fie
 %
 %       'binwidth' = width of the altitude bins in km.  If not specified,
 %       all points will be plotted with no binning.
-%       
+%
 %       'binmode' = sets if the binned value will be a 'median' with 25th and
 %       75th quartile or 'mean' with std. error. Median is default.
 %
@@ -43,13 +43,30 @@ profnum = [min(pout.profnum), max(pout.profnum)];
 binwidth = pout.binwidth;
 binmode = pout.binmode;
 
-% Find the entries that have the desired site flag and profile number
-site_logical = (Merge.Data.discoveraqSiteFlag1sec.Values >= siteflag(1) & Merge.Data.discoveraqSiteFlag1sec.Values <= siteflag(2));
-profnum_logical = (Merge.Data.ProfileSequenceNum.Values >= profnum(1) & Merge.Data.ProfileSequenceNum.Values <= profnum(2));
+% Find the entries that have the desired site flag and profile number, if
+% we are using discover-aq data.  Otherwise, just import the data.
+clear profnum_logical site_logical %Clear these just in case they are hanging around from a previous function call
+if isfield(Merge.Data,'ProfileSequenceNum');
+    profnum_logical = (Merge.Data.ProfileSequenceNum.Values >= profnum(1) & Merge.Data.ProfileSequenceNum.Values <= profnum(2));
+elseif isfield(Merge.Data,'ProfileNumber');
+    profnum_logical = (Merge.Data.ProfileNumber.Values >= profnum(1) & Merge.Data.ProfileNumber.Values <= profnum(2));
+end
 
-pressures = Merge.Data.PRESSURE.Values(site_logical & profnum_logical);
-data_vals = eval(sprintf('Merge.Data.%s.Values(site_logical & profnum_logical)',field));
-local_times = Merge.Data.LOCAL_SUN_TIME.Values(site_logical & profnum_logical);
+if isfield(Merge.Data,'discoveraqSiteFlag1sec')
+    site_logical = (Merge.Data.discoveraqSiteFlag1sec.Values >= siteflag(1) & Merge.Data.discoveraqSiteFlag1sec.Values <= siteflag(2));
+elseif isfield(Merge.Data, 'SiteSeqNumber')
+    site_logical = (Merge.Data.SiteSeqNumber.Values >= siteflag(1) & Merge.Data.SiteSeqNumber.Values <= siteflag(2));
+end
+
+if exist('profnum_logical','var') && exist('site_logical','var')
+    pressures = Merge.Data.PRESSURE.Values(site_logical & profnum_logical);
+    data_vals = eval(sprintf('Merge.Data.%s.Values(site_logical & profnum_logical)',field));
+    local_times = Merge.Data.LOCAL_SUN_TIME.Values(site_logical & profnum_logical);
+else
+    pressures = Merge.Data.PRESSURE.Values;
+    data_vals = eval(sprintf('Merge.Data.%s.Values',field));
+    local_times = Merge.Data.LOCAL_SUN_TIME.Values;
+end
 
 % Replace any fill values, upper LOD, or lower LOD values with NaNs
 fill_val = eval(sprintf('Merge.Data.%s.Fill',field));
@@ -94,7 +111,7 @@ else
     else titlestr = [titlestr, 'Profile number: all  '];
     end
     
-    if ~any(siteflag < -100); titlestr = [titlestr, sprintf('Site flags: %s  ', mat2str(siteflag))]; 
+    if ~any(siteflag < -100); titlestr = [titlestr, sprintf('Site flags: %s  ', mat2str(siteflag))];
     else titlestr = [titlestr, 'Site flags: all  '];
     end
     title(titlestr,'fontsize',18)

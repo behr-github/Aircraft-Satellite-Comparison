@@ -21,10 +21,14 @@ p.addRequired('lon');
 p.addRequired('lat');
 p.addRequired('data');
 p.addOptional('skip',1,@isscalar);
+p.addParamValue('lonbdy',[],@ismatrix);
+p.addParamValue('latbdy',[],@ismatrix);
 
 p.parse(lon,lat,data, varargin{:})
 pout = p.Results;
 skip = pout.skip;
+latbdy = [min(pout.latbdy), max(pout.latbdy)];
+lonbdy = [min(pout.lonbdy), max(pout.lonbdy)];
 
 % Read in the data, lat, and lon data:
 p_alt = pout.data;
@@ -47,8 +51,8 @@ lon(tmp) = [];
 p_alt(tmp) = [];
 
 % Calculate the lat/lon boundaries with some padding
-latbdy = [floor(min(lat))-0.5, ceil(max(lat))+0.5];
-lonbdy = [floor(min(lon))-0.5, ceil(max(lon))+0.5];
+if isempty(latbdy); latbdy = [floor(min(lat))-0.5, ceil(max(lat))+0.5]; end
+if isempty(lonbdy); lonbdy = [floor(min(lon))-0.5, ceil(max(lon))+0.5]; end
 
 % Calculate an integer version of pressure altitude that has its lowest
 % value at 1 and its highest as the first dimension size of the colormap.
@@ -63,7 +67,7 @@ m_grid('linestyle','none')
 
 
 for a = 1:numel(lat)
-    m_line(lon(a), lat(a), 'color',cm((cml+1)-p_alt64(a),:)); % We do the subtraction in the cm index so that high pressures are lower on the colorbar
+    m_line(lon(a), lat(a), 'color',cm(p_alt64(a),:)); 
 end
 
 % Now, unfortunately since we've done a custom implementation of coloring,

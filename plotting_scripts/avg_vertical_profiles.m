@@ -30,6 +30,11 @@ function [ bin_vals, bin_midpts, bin_errors ] = avg_vertical_profiles( data_fiel
 %   field argument.  For aircraft data, the fields 'ProfileSequenceNum' and
 %   'discoveraqSiteFlag1sec' can be called as 'profnum' or 'siteflag'.
 %   This is only for the criteria field, not the first argument data field.
+%   Additionally, some special arguments have been added: 'starttime-lt' or
+%   'start_time-lt' will use profiles (IDed by profile number) that have a
+%   start time in local sun time within the range specified.
+%   'starttime-utc' or 'start_time-utc' do the same, but for the UTC field
+%   (in seconds).
 %
 %   By default, this function will look for folders matching the data type
 %   string at the directory '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files'.
@@ -85,9 +90,21 @@ end
 
 % Parse the shorthand entries for profile number and site flag if we are
 % considering aircraft data.  Allow the user to capitalize the first letter
-if strcmp(dtype,'Aircraft')
+% Different campaigns use different field names, so check which campaign 
+if strcmp(dtype,'Aircraft') && datenum(start_date) >= datenum('07/01/2011') && datenum(end_date) <= datenum('07/31/2011')
     crit_field = regexprep(crit_field,'[pP]rofnum','ProfileSequenceNum');
     crit_field = regexprep(crit_field,'[sS]iteflag','discoveraqSiteFlag1sec');
+    if isempty(pfield); pfield = 'PRESSURE'; end
+elseif strcmp(dtype,'Aircraft') && datenum(start_date) >= datenum('01/01/2013') && datenum(end_date) <= datenum('02/28/2013')
+    crit_field = regexprep(crit_field,'[pP]rofnum','ProfileNumber');
+    crit_field = regexprep(crit_field,'[sS]iteflag','SiteSeqNumber');
+    if isempty(pfield); pfield = 'PRESSURE'; end
+elseif strcmp(dtype,'Aircraft') && datenum(start_date) >= datenum('09/01/2013') && datenum(end_date) <= datenum('09/30/2013')
+    crit_field = regexprep(crit_field,'[pP]rofnum','ProfileNumber');
+    crit_field = regexprep(crit_field,'[sS]iteflag','SiteSeqNumber');
+    if isempty(pfield); pfield = 'PRESSURE'; end
+else
+    warning('Start date does not conform to any known Discover campaigns, profnum and siteflag criteria will not work.');
 end
 
 % Prepare matrices for pressure, field values, and all the criteria. These
@@ -112,7 +129,6 @@ for a=1:numel(mat_files);
     if ~isempty(start_date) && ~isempty(end_date) %If the user specified start and end dates, check that the file is within the date range
         % If the date of the file falls outside the range give, skip this file.
         if fdate < datenum(start_date) || fdate > datenum(end_date)
-            fprintf('Skipping %s\n',fname(s:e));
             continue
         end
     end
@@ -154,8 +170,30 @@ for a=1:numel(mat_files);
     % Load in the data 
     x = true(1,eval(sprintf('numel(Merge.Data.%s.Values)',field))); % This will be our logical index matrix. We will successively restrict it for each criteria parameter.
     for b=1:numel(crit_field)
-        tmp = eval(sprintf('Merge.Data.%s.Values >= %f & Merge.Data.%s.Values <= %f',crit_field{b},min(crit_range{b}),crit_field{b},max(crit_range{b})));
-        x = x & tmp;
+        if any(strcmpi(crit_field{b},{'starttime-lt','start_time-lt'}))
+            unique_profnums = unique(Merge.Data.ProfileSequenceNum.Values);
+            unique_profnums = unique_profnums(unique_profnums > 0);
+            tmp = false(1,eval(sprintf('numel(Merge.Data.%s.Values)',field)));
+            for c = 1:numel(unique_profnums)
+                times = Merge.Data.LOCAL_SUN_TIME.Values(Merge.Data.ProfileSequenceNum.Values == unique_profnums(c));
+                if min(times(:)) > min(crit_range{b}) && min(times(:)) < max(crit_range{b})
+                    tmp = tmp | Merge.Data.ProfileSequenceNum.Values == unique_profnums(c);
+                end
+            end
+        elseif any(strcmpi(crit_field{b},{'starttime-utc','start_time-utc'}));
+            unique_profnums = unique(Merge.Data.ProfileSequenceNum.Values);
+            unique_profnums = unique_profnums(unique_profnums > 0);
+            tmp = false(1,eval(sprintf('numel(Merge.Data.%s.Values)',field)));
+            for c = 1:numel(unique_profnums)
+                times = Merge.Data.UTC.Values(Merge.Data.ProfileSequenceNum.Values == unique_profnums(c));
+                if min(times(:)) > min(crit_range{b}) && min(times(:)) < max(crit_range{b})
+                    tmp = tmp | Merge.Data.ProfileSequenceNum.Values == unique_profnums(c);
+                end
+            end
+        else
+            tmp = eval(sprintf('Merge.Data.%s.Values >= %f & Merge.Data.%s.Values <= %f',crit_field{b},min(crit_range{b}),crit_field{b},max(crit_range{b})));
+            x = x & tmp;
+        end
     end
     tmp_data = eval(sprintf('Merge.Data.%s.Values(x)',field));
     tmp_pres = eval(sprintf('Merge.Data.%s.Values(x)',pfield));

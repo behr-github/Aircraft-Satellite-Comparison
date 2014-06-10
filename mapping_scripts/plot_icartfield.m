@@ -12,18 +12,25 @@ function [ cb ] = plot_icartfield( Merge_str, data_field, varargin )
 %   The optional second argument will reduce the number of points plotted,
 %   e.g. (Merge, 4) would only plot every 4th point.
 %
+%   The parameter value 'cbrange' allows you to force the colorbar to a
+%   specific range.  Since the color mapping is done custom and cannot be
+%   changed with caxis, this is the only way to override the default
+%   mapping.
+%
 %   Josh Laughner <joshlaugh5@gmail.com> 21 May 2014
 
 p = inputParser;
 p.addRequired('Merge_str');
 p.addRequired('data_field',@isstr);
 p.addOptional('skip',1,@isscalar);
+p.addParamValue('cbrange',[],@ismatrix);
 
 p.parse(Merge_str, data_field, varargin{:})
 pout = p.Results;
 Merge= pout.Merge_str;
 field = pout.data_field;
 skip = pout.skip;
+cbrange = pout.cbrange;
 
 if ~isfield(Merge.Data,field)
     error('plot_icart:not_field','%s is not a data field in the Merge data structure.',field);
@@ -54,8 +61,14 @@ lonbdy = [floor(min(lon))-0.5, ceil(max(lon))+0.5];
 % Calculate an integer version of pressure altitude that has its lowest
 % value at 1 and its highest as the first dimension size of the colormap.
 % This is necessary so that these can serve as indices to the colormap.
-p_alt64 = ceil((p_alt - min(p_alt)) / max(p_alt - min(p_alt)) * (cml-1)) + 1;
+if isempty(cbrange)
+    min_palt = min(p_alt); max_palt = max(p_alt);
+else
+    min_palt = min(cbrange); max_palt = max(cbrange);
+end
 
+p_alt64 = ceil((p_alt - min_palt) / max_palt * (cml-1)) + 1;
+p_alt64 = max(p_alt64,1); p_alt64 = min(p_alt64,cml); % Clamp the values of p_alt64 such that they will always be a valid index of the colormap
 % Plot things
 m_proj('Mercator','long',lonbdy,'lat',latbdy);
 m_coast('color','k');
@@ -64,7 +77,7 @@ m_grid('linestyle','none')
 title(sprintf('Flight path on %s ', Merge.metadata.date),'fontsize',18)
 
 for a = 1:numel(lat)
-    m_line(lon(a), lat(a), 'color',cm((cml+1)-p_alt64(a),:)); % We do the subtraction in the cm index so that high pressures are lower on the colorbar
+    m_line(lon(a), lat(a), 'color',cm(p_alt64(a),:)); 
 end
 
 % Now, unfortunately since we've done a custom implementation of coloring,

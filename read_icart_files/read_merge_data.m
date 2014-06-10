@@ -9,19 +9,24 @@
 %%%%%  USER INPUT   %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
+% Set this to 1 to select icart and save directories using a standard file
+% browser window
+
+user_select_dir = 1;
+
 % The location of the campaign (Baltimore_DC, Texas, CA, Colorado). Must
 % match directory structure
-location = 'Baltimore_DC';
+location = 'Texas';
 
 % The file types (e.g. 1 sec merge). Must match directory structure.
-data_type = 'Ozone sondes';
+data_type = '1 sec merges';
 
 % The name of the overall directory containing the files to be read in.
 % Location and merge type will be populated
 icart_path = '/Volumes/share/GROUP/DISCOVER-AQ/';
 
 % The directory to save the matlab files to
-save_path = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Sondes';
+save_path = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft';
 
 % Set this to 1 to run a single file, set to 0 to run a full directory
 single_file = 0;
@@ -35,22 +40,40 @@ DEBUG_LEVEL = 1;
 %%%%% INPUT PARSING %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Check that the save path exists. Ask the user if they want to create the
-% folder, abort, or don't save.
-if ~exist(save_path,'dir')
-    response = input('Save folder does not exist. [C]reate, [D]on''t save, or abort (default):  ', 's');
-    if strcmpi(response,'c'); mkdir(save_path); save_bool = 1;
-    elseif strcmpi(response,'d'); save_bool = 0;
-    else error('read_merge:save','User aborted: save directory does not exist');
-    end
-else
+if user_select_dir;
+    icart_dir = uigetdir('/Volumes','Select the directory with the ICART files in it');
+    fprintf('Will read icart files from %s\n',icart_dir);
+    save_path = uigetdir('/Volumes','Select the directory to save the resulting .mat files to');
+    fprintf('Will save mat files to %s\n',save_path);
     save_bool = 1;
+    if all(icart_dir == 0) || all(save_path == 0); error('read_merge_data:user_cancel','User canceled run.'); end
+    
+    savetitle = sprintf('Enter the save file name. This will preceed the data date. Canceling will use %s',[location,'_',data_type]);
+    user_savename = inputdlg(savetitle); user_savename = user_savename{1};
+    if ~isempty(user_savename) && strcmp(user_savename(end),'_');
+        user_savename = user_savename(1:end-1);
+    end
+else % If using the coded directory, validate said directories
+    % Check that the save path exists. Ask the user if they want to create the
+    % folder, abort, or don't save.
+    if ~exist(save_path,'dir')
+        response = input('Save folder does not exist. [C]reate, [D]on''t save, or abort (default):  ', 's');
+        if strcmpi(response,'c'); mkdir(save_path); save_bool = 1;
+        elseif strcmpi(response,'d'); save_bool = 0;
+        else error('read_merge:save','User aborted: save directory does not exist');
+        end
+    else
+        save_bool = 1;
+    end
+    
+    icart_dir = fullfile(icart_path, location, data_type);
+    % Check that the data directory exists
+    if ~exist(icart_dir,'dir');
+        error('read_icart:data_dir_DNE','Data directory does not exist.');
+    end
 end
 
-% Check that the data directory exists
-if ~exist(fullfile(icart_path, location, data_type),'dir');
-    error('read_icart:data_dir_DNE','Data directory does not exist.');
-end
+
 
 % Collect the list of files to read; if single_file is 1, restrict them to
 % just that file.  In either case, restrict it to .ict files (this avoids
@@ -62,9 +85,9 @@ if single_file
     filemonth = filedatestr(6:7);
     fileday = filedatestr(9:10);
     filename = ['*',fileyear,filemonth,fileday,'*.ict'];
-    merge_files = dir(fullfile(icart_path, location, data_type, filename));
+    merge_files = dir(fullfile(icart_dir, filename));
 else
-    merge_files = dir(fullfile(icart_path, location, data_type, '*.ict'));
+    merge_files = dir(fullfile(icart_dir, '*.ict'));
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
@@ -81,8 +104,13 @@ for a = 1:numfiles
     
     Merge.metadata.file = merge_files(a).name;
     
-    fid = fopen(fullfile(icart_path, location, data_type, merge_files(a).name));
-    N = fscanf(fid, '%d, %d\n'); % Get the number of lines before the data starts
+    fid = fopen(fullfile(icart_dir, merge_files(a).name));
+    line1 = fgetl(fid); % Some merge files separate the two numbers on the first line with a comma, some don't. This gets the whole line...
+    N = sscanf(line1, '%d'); % ...then this gets the first number on that line.
+    
+    if length(N) == 1; delim = ',';
+    else delim = '';
+    end
     
     line_count = 2; % Keep track of what line we're on
     
@@ -93,18 +121,23 @@ for a = 1:numfiles
     Merge.metadata.description = fgetl(fid); line_count = line_count + 1;
     % Create the UTC unit field
     Merge.Data.UTC.fill = 'N/A';
-    Merge.Data.UTC.unit = 'seconds after midnight in UTC time';
+    Merge.Data.UTC.Unit = 'seconds after midnight in UTC time';
     
     % Skip lines 5-6
     for l=5:6; fgetl(fid); line_count = line_count + 1; end
     
-    % Get the data date
-    y = fscanf(fid,'%d, %d, %d');
+    % Get the data date.  Check that y contains at least 3 values, if it
+    % doesn't, the file probably uses space delimiters instead of commas.
+    line7 = fgetl(fid); line_count = line_count + 1;
+    y = sscanf(line7,'%d, %d, %d');
+    if length(y) < 3
+        y = sscanf(line7,'%d %d %d');
+    end
     curr_date = datestr([num2str(y(1)),'/',num2str(y(2)),'/',num2str(y(3))],29);
     Merge.metadata.date = curr_date;
     
-    % Skip the rest of line 7-9
-    for l=7:9; fgetl(fid); line_count = line_count + 1; end
+    % Skip lines 8-9
+    for l=8:9; fgetl(fid); line_count = line_count + 1; end
     
     % Get the number of fields we'll need to handle
     numfields = str2double(fgetl(fid)); line_count = line_count + 1;
@@ -112,8 +145,14 @@ for a = 1:numfiles
     % Skip one line
     fgetl(fid); line_count = line_count + 1;
     
-    % Read in the fill values
-    fill_vals = fscanf(fid,[repmat('%d, ',1,numfields-1),'%d\n']);
+    % Read in the fill values, creating the format spec appropriately based
+    % on the delimiter decided from the first line.
+    line12 = fgetl(fid);
+    if strcmpi(delim,',');
+        fill_vals = sscanf(line12,repmat('%d, ',1,numfields));
+    else
+        fill_vals = sscanf(line12,repmat('%d ',1,numfields));
+    end
     line_count = line_count + 1;
     
     % For each field, read the unit and fill value into the data structure
@@ -124,8 +163,9 @@ for a = 1:numfiles
         unit = line((comma_pos+2):end);
         
         % Sanitize the field name, characters that don't belong in variable
-        % names will be removed
+        % names will be removed. Also, prepend 'f_' to any field names 
         field = regexprep(field,'\W','');
+        if ~isempty(regexp(field(1),'[^a-zA-Z]')); field = ['f_',field]; end % regexp(field,'[^a-zA-Z]','ONCE') DOES NOT WORK: this line needs to test if the first character in 'field' is not a letter.
         eval(sprintf('Merge.Data.%s.Unit = ''%s'';',field,unit))
         eval(sprintf('Merge.Data.%s.Fill = %d;',field,fill_vals(f)));
     end
@@ -150,6 +190,7 @@ for a = 1:numfiles
     for f = 1:numfields+1
         field = fscanf(fid,'%s,');
         field = regexprep(field,'\W','');
+        if ~isempty(regexp(field(1),'[^a-zA-Z]')); field = ['f_',field]; end % regexp(field,'[^a-zA-Z]','ONCE') DOES NOT WORK: this line needs to test if the first character in 'field' is not a letter.
         header{f} = field;
     end
     
@@ -159,7 +200,7 @@ for a = 1:numfiles
     
     if DEBUG_LEVEL > 0; fprintf('   Loading the data table\n'); end
     % Read in the full table
-    DataTable = dlmread(fullfile(icart_path, location, data_type, merge_files(a).name),',',N(1),0);
+    DataTable = dlmread(fullfile(icart_dir, merge_files(a).name),delim,N(1),0);
     
     % Double check that the table size matches the header row
     if size(DataTable,2) ~= numel(header);
@@ -178,7 +219,11 @@ for a = 1:numfiles
     % Save the day's structure, table, and header as a .mat file
     if save_bool
         file_date = regexprep(curr_date,'/','');
-        savename = [location, '_', data_type, '_', file_date];
+        if user_select_dir && ~isempty(user_savename);
+            savename = [user_savename,'_',file_date];
+        else
+            savename = [location, '_', data_type, '_', file_date];
+        end
         savename = regexprep(savename,'\W','_');
         
         savenum = 2;

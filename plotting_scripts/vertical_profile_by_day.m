@@ -9,7 +9,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % The location to plot.  Must match the file name location.
-location = 'Baltimore_DC';
+location = 'Texas';
 
 % Data Type: Aircraft or Sondes
 dtype = 'Aircraft';
@@ -39,7 +39,7 @@ binwidth2 = [];
 
 % Only plot profiles within a certain range of profile numbers or site flags.
 % To specify a range, use [min max].  Leave empty (i.e. []) to disregard that parameter.
-profnums = [1000,1999];
+profnums = [101000,101999];
 siteflags = [];
 
 % The location where the .mat files from reading in .ict merge files can be found
