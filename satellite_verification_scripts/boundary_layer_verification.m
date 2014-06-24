@@ -259,6 +259,11 @@ DC8_NO2 = -9e9*ones(size(BEHR_NO2));
 concNO2debug = -9e9*ones(size(BEHR_NO2));
 BLHdebug = -9e9*ones(size(BEHR_NO2));
 
+% Now reject any no2 measurments more than 2 sigma from the mean
+mean_no2 = nanmean(no2); std_no2 = nanstd(no2);
+no2lb = mean_no2 - 2*std_no2; no2ub = mean_no2 + 2*std_no2;
+in_std = no2 >= no2lb & no2 <= no2ub;
+no2(~in_std) = NaN;
 % For each pixel left, find all aircraft measurments that fall within that
 % pixel.
 for a=1:numel(BEHR_NO2)
@@ -272,13 +277,9 @@ for a=1:numel(BEHR_NO2)
     % measurement more than 2 std. dev. away from the mean
     in_BL = alt_pix <= interp_height_pix;
     
-    mean_no2 = nanmean(no2_pix); std_no2 = nanstd(no2_pix);
-    no2_lower_bound = mean_no2 - 2*std_no2; no2_upper_bound = mean_no2 + 2*std_no2;
-    in_std = no2_pix >= no2_lower_bound & no2_pix <= no2_upper_bound;
+    no2_pix = no2_pix(in_BL); interp_height_pix = interp_height_pix(in_BL);
     
-    no2_pix = no2_pix(in_BL & in_std); interp_height_pix = interp_height_pix(in_BL & in_std);
-    
-    if numel(no2_pix) < 20 % If there are not 20 measurments within this pixel, skip it
+    if sum(~isnan(no2_pix)) < 20 % If there are not 20 measurments within this pixel, skip it
         continue
     else % Otherwise, average the NO2 measurement and integrate from ground height to tropopause of the pixel
         mean_no2_pix = nanmean(no2_pix); concNO2debug(a) = mean_no2_pix;

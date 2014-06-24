@@ -48,18 +48,18 @@ else
         
         % Bin the data so that the vertical profiles are less noisy
         [no2seg, altseg] = bin_rolling_vertical_profile(altseg,no2seg,0.5,0.1);
-        
-        %         % For most measurements, to find the boundary layer, we look for the
-        %         % altitude at which the [NO2] is 1/e of its maximum value (as well as
-        %         % requiring that d[NO2]/dz < 0).  However, when 1 e-fold of the max
-        %         % value is < 40 pptv, this method tends to run into problems because
-        %         % the average [NO2] above the BL is ~40 pptv. Thus, when this is the
-        %         % case, we look for the greatest gradient in NO2, with d[NO2]/dz < 0
-        %         if max(no2seg(:))*exp(-1) < 40;
-        %             method = 'max';
-        %         else
-        %             method = 'exp';
-        %         end
+%         
+%         % For most measurements, to find the boundary layer, we look for the
+%         % altitude at which the [NO2] is 1/e of its maximum value (as well as
+%         % requiring that d[NO2]/dz < 0).  However, when 1 e-fold of the max
+%         % value is < 40 pptv, this method tends to run into problems because
+%         % the average [NO2] above the BL is ~40 pptv. Thus, when this is the
+%         % case, we look for the greatest gradient in NO2, with d[NO2]/dz < 0
+%         if max(no2seg(:))*exp(-1) < 40 && ~strcmpi(method,'theta');
+%             method = 'max';
+%         elseif ~strcmpi(method,'theta')
+%             method = 'exp';
+%         end
         %        method = 'max'; % 23 Jun 2014: We're going to try just looking for the maximum gradient to see if that brings the column densities down
         
         tmp = find_bdy_layer_height(no2seg, altseg,method);
