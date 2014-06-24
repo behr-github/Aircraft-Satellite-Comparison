@@ -47,7 +47,7 @@ else
         utc(a) = nanmedian(utc_in(startind:endind));
         
         % Bin the data so that the vertical profiles are less noisy
-        [no2seg, altseg] = bin_vertical_profile(altseg,no2seg,0.3);
+        [no2seg, altseg] = bin_rolling_vertical_profile(altseg,no2seg,0.5,0.1);
         
         %         % For most measurements, to find the boundary layer, we look for the
         %         % altitude at which the [NO2] is 1/e of its maximum value (as well as

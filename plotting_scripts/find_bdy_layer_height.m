@@ -52,7 +52,8 @@ if ~isempty(regexpi(find_type,'theta'))
 elseif any(strcmpi(find_type,{'exp','expo','exponential'}));
     % Sort and average same x values so that altitude is a monotonically increasing vector
     [altitude, vals] = average_same_x(altitude, vals);
-    
+    if ~isrow(altitude); altitude = altitude'; end
+    if ~isrow(vals); vals = vals'; end
     efold = exp(-1) * max(vals(:));
     interp_alt = min(altitude):0.01:max(altitude);
     interp_vals = interp1(altitude,vals,interp_alt);
@@ -66,7 +67,10 @@ else
     binwidth = nanmean(diff(altitude));
     dx_dz = diff(vals)./diff(altitude);
     mag_dval = abs(diff(vals));
-    S = sortrows([[mag_dval'; 0], [(dx_dz<0)';0], altitude']); S = flipud(S);
+    if ~iscolumn(altitude); altitude = altitude'; end
+    if ~iscolumn(mag_dval); mag_dval = mag_dval'; end
+    if ~iscolumn(dx_dz); dx_dz = dx_dz'; end
+    S = sortrows([[mag_dval; 0], [(dx_dz<0);0], altitude]); S = flipud(S);
     xx = find(S(:,2),1,'first'); % Find the largest differnce in the input value that has a negative slope w.r.t. altitude
     %xx = find(abs(diff(vals)) == max(abs(diff(vals(2:end)))) & dx_dz < 0);
     bl_height = S(xx,3) + 0.5*binwidth;
