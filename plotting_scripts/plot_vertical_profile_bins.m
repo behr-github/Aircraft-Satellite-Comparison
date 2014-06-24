@@ -33,13 +33,13 @@ p.addParamValue('title','',@isstr);
 p.parse(data_vals, altitude, errors, varargin{:});
 pout = p.Results;
 
-data_vals = pout.vals;
-altitude = pout.altitude;
-errors = pout.errors;
+data_vals = pout.vals; if ~iscolumn(data_vals); data_vals = data_vals'; end
+altitude = pout.altitude; if ~iscolumn(altitude); altitude = altitude'; end
+errors = pout.errors; if size(errors,2)>2; errors = errors'; end
 
-data_vals2 = pout.vals2;
-altitude2 = pout.alt2;
-errors2 = pout.err2;
+data_vals2 = pout.vals2; if ~iscolumn(data_vals2); data_vals2 = data_vals2'; end
+altitude2 = pout.alt2; if ~iscolumn(altitude2); altitude2 = altitude2'; end
+errors2 = pout.err2; if size(errors2,2)>2; errors2 = errors2'; end
 
 if any([~isempty(data_vals2), ~isempty(altitude2), ~isempty(errors2)]) && ~all([~isempty(data_vals2), ~isempty(altitude2), ~isempty(errors2)])
     error('plot_vert_bins:second_field','Second profile variables must either be all passed or none passed')
@@ -53,7 +53,7 @@ end
 % Plot the error envelopes first so that they don't cover the lines
 % themselves
 if size(errors,2) == 2;
-    fh = plot_error_envelope_x(altitude,errors(:,1)',errors(:,2)','colorspec',[0.7 0.7 1]);
+    fh = plot_error_envelope_x(altitude',errors(:,1)',errors(:,2)','colorspec',[0.7 0.7 1]);
 elseif size(1,errors) == 1;
     fh = plot_error_envelope_x(altitude,data_vals - errors, data_vals + errors, 'colorspec', [0.7 0.7 1]);
 end
@@ -68,7 +68,7 @@ if ~isempty(data_vals2)
     hax2 = axes('Position', ax_pos,'XAxisLocation','top','YLim',old_ylim,'YTick',[],'Color','none');
     
     if size(errors2,2) == 2;
-        plot_error_envelope_x(altitude2,errors2(:,1)',errors2(:,2)','colorspec',[1 0.7 0.7], 'FaceAlpha', 0.5, 'fignum', fh);
+        plot_error_envelope_x(altitude2,errors2(:,1),errors2(:,2),'colorspec',[1 0.7 0.7], 'FaceAlpha', 0.5, 'fignum', fh);
     elseif size(1,errors2) == 1;
         plot_error_envelope_x(altitude2,data_vals2 - errors2, data_vals2 + errors2, 'colorspec', [1 0.7 0.7], 'FaceAlpha',0.5, 'fignum', fh);
     end

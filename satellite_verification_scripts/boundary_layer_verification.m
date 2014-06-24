@@ -1,6 +1,6 @@
-function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2] = boundary_layer_verification( Merge, Data, tz, varargin )
-%[ pix_lat, pix_lon, BEHR_NO2, aircraft_NO2, OMI_NO2 ]
-
+function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2, concNO2debug, BLHdebug] = boundary_layer_verification( Merge, Data, tz, varargin )
+%[ pix_lon, pix_lat, OMI_NO2, BEHR_NO2, aircraft_NO2]
+%
 %boundary_layer_verification: Compare satellite and aircraft measurements
 %using the boundary layer method. Returns pixel latitude, longitude, BEHR
 %tropospheric NO2, aircraft trop. NO2, and OMI trop. NO2.
@@ -11,10 +11,10 @@ function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2] = boundary_layer_verific
 %   data structure (one of the outputs of BEHR_main.m), and a time zone
 %   abbreviation:
 %
-%       EST = Eastern Std.      
-%       CST = Central Std.      
-%       MST = Mountain Std.     
-%       PST = Pacific Std.      
+%       EST = Eastern Std.
+%       CST = Central Std.
+%       MST = Mountain Std.
+%       PST = Pacific Std.
 %
 %   Since Aura satellite overpass is ~1:45 p in standard time, do not use
 %   daylight savings time values.  Further, you must pass only one element
@@ -75,6 +75,8 @@ lat_raw = Merge.Data.LATITUDE.Values;
 lon_raw = Merge.Data.LONGITUDE.Values - 360;
 pressure_raw = Merge.Data.PRESSURE.Values;
 temperature_raw = Merge.Data.TEMPERATURE.Values;
+theta_raw = Merge.Data.THETA.Values;
+h2o_raw = Merge.Data.H2Ov.Values;
 
 % Get the date
 merge_date = Merge.metadata.date;
@@ -101,25 +103,34 @@ utc = utc_raw(time_logical);
 lat = lat_raw(time_logical);
 lon = lon_raw(time_logical);
 pressure = pressure_raw(time_logical);
+theta = theta_raw(time_logical);
+h2o = h2o_raw(time_logical);
 
 % We do not want to restrict temperature, as it will be used to get a
-% temperature profile for conversion of 
+% temperature profile for conversion of
 
 % Find any fill, ULOD, or LLOD values in any of the imported data sets relating to NO2
 % and remove them.
 no2_fill = Merge.Data.NO2_UCB.Fill;
 alt_fill = Merge.Data.ALTP.Fill;
-ralt_fill = Merge.Data.Radar_Altitude.Fill;
+%ralt_fill = Merge.Data.Radar_Altitude.Fill;
 lat_fill = Merge.Data.LATITUDE.Fill;
 lon_fill = Merge.Data.LONGITUDE.Fill;
 pres_fill = Merge.Data.PRESSURE.Fill;
+theta_fill = Merge.Data.THETA.Fill;
+h2o_fill = Merge.Data.H2Ov.Fill;
 
-fill_logical = no2 ~= no2_fill & alt ~= alt_fill & lat ~= lat_fill & lon ~= lon_fill & pressure ~= pres_fill & radar_alt == ralt_fill;
+fill_logical = no2 ~= no2_fill & alt ~= alt_fill & lat ~= lat_fill & lon ~= lon_fill & pressure ~= pres_fill;
+theta_logical = theta ~= theta_fill & alt ~= alt_fill & lat ~= lat_fill & lon ~= lon_fill & pressure ~= pres_fill;
+h2o_logical = h2o ~= h2o_fill & alt ~= alt_fill & lat ~= lat_fill & lon ~= lon_fill & pressure ~= pres_fill;
 
 ulod = Merge.metadata.upper_lod_flag;
 llod = Merge.metadata.lower_lod_flag;
 
 lod_logical = no2 ~= ulod & no2 ~= llod & alt ~= ulod & alt ~= llod & pressure ~= ulod & pressure ~= llod; % Lat, lon, radar altitude, and utc should not be subject to limits of detection
+
+h2o = h2o(h2o_logical); alt_h2o = alt(h2o_logical); utc_h2o = utc(h2o_logical);
+theta = theta(theta_logical); alt_theta = alt(theta_logical); utc_theta = utc(theta_logical);
 
 no2 = no2(lod_logical & fill_logical);
 alt = alt(lod_logical & fill_logical);
@@ -128,6 +139,8 @@ utc = utc(lod_logical & fill_logical);
 lat = lat(lod_logical & fill_logical);
 lon = lon(lod_logical & fill_logical);
 pressure = pressure(lod_logical & fill_logical);
+
+
 
 % Now for temperature
 temperature_fill = Merge.Data.TEMPERATURE.Fill;
@@ -138,14 +151,19 @@ alt_T = alt_raw(T_fill_logical & T_lod_logical);
 utc_T = utc_raw(T_fill_logical & T_lod_logical);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%  FIND BDY LAYER HEIGHTS  %%%%%  
+%%%%%  FIND BDY LAYER HEIGHTS  %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if DEBUG_LEVEL > 0; fprintf(' Calculating & interpolating boundary layer heights.\n'); end
 
 % Get the range for today;
 d = find(datenum(range_dates) == datenum(merge_date));
 
-[heights, times] = findall_no2_bdy_layer_heights(utc_raw, no2_raw, alt_raw, Ranges(d).Ranges);
+[heights_no2, times] = findall_no2_bdy_layer_heights(utc, no2, alt, Ranges(d).Ranges);
+[heights_h2o, times_h2o] = findall_no2_bdy_layer_heights(utc_h2o, h2o, alt_h2o, Ranges(d).Ranges);
+[heights_theta, times_theta] = findall_no2_bdy_layer_heights(utc_theta, theta, alt_theta, Ranges(d).Ranges,'theta');
+
+tmp = [heights_no2, heights_h2o, heights_theta];
+heights = nanmean(tmp,2);
 nans = isnan(heights);
 heights = heights(~nans); times = times(~nans);
 if numel(heights) < 2
@@ -171,18 +189,11 @@ end
 interp_height = interp_height(time_logical);
 interp_height = interp_height(lod_logical & fill_logical);
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% PREP TEMP AND PRESSURE DATA %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%  CALCULATE NO2 COLUMNS   %%%%%  
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% Integrate aircraft NO2 measurements from the boundary layer height to the
-% surface (i.e. over the distance defined by radar altitude).  If the plane
-% is above the boundary layer, set column to NaN since no data is available
-% on BL NO2.
-if DEBUG_LEVEL > 0; fprintf(' Integrating columns\n'); end
-
-% First, extract a temperature profile; we will need this to convert mixing
+% Extract a temperature profile; we will need this to convert mixing
 % ratios to number densities
 [T_bins, T_bin_alt] = bin_vertical_profile(alt_T, temperature, 0.3);
 % The temperature profiles often have an inversion in the BL, so split the
@@ -206,61 +217,83 @@ P0 = exp(P(2)); H = -1/P(1);
 Av = 6.022e23; % molec. / mol
 R = 8.314e4; % (hPa * cm^3) / (mol * K)
 
-% Get the GLOBE terrain altitude for this region
-latminmax = [floor(min(lat)), ceil(max(lat))];
-lonminmax = [floor(min(lon)), ceil(max(lon))];
-globe_dir = '/Volumes/share/GROUP/SAT/BEHR/GLOBE_files';
-[terpres, refvec] = globedem(globe_dir,1,latminmax,lonminmax);
-cell_count = refvec(1);
-globe_latmax = refvec(2); globe_latmin = globe_latmax - size(terpres,1)*(1/cell_count);
-globe_lat_matrix = (globe_latmin + 1/(2*cell_count)):(1/cell_count):globe_latmax;
-globe_lat_matrix = globe_lat_matrix';
-globe_lat_matrix = repmat(globe_lat_matrix,1,size(terpres,2));
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  COLOCATE AIRCRAFT SEGMENTS WITH PIXELS   %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-globe_lonmin = refvec(3); globe_lonmax = globe_lonmin + size(terpres,2)*(1/cell_count);
-globe_lon_matrix = globe_lonmin + 1/(2*cell_count):(1/cell_count):globe_lonmax;
-globe_lon_matrix = repmat(globe_lon_matrix,size(terpres,1),1); 
+% Find pixels that fail the criteria used for BEHR mapping.
+% omi_pixel_reject.m works by setting Areaweight to 0 for any pixels that
+% fail the criteria. Hence, we need to create an areaweight field that
+% assumes all pixels are valid.
 
-terpres(isnan(terpres)) = 0; % The Globe database fills oceans with NANs.  Since we care about column height, we want oceans to be at 0 altitude.
+Data.Areaweight = ones(size(Data.Longitude));
+if DEBUG_LEVEL > 0; fprintf('   Rejecting with omi_pixel_reject.m\n'); end
+Data2 = omi_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
+xx = Data2.Areaweight > 0;
 
-% Prepare variables from the BEHR Data Structure
-omi_lat = Data.Latitude; omi_lon = Data.Longitude;
-TP_pres = Data.TropopausePressure;
+% Read in corner lat/lon and BEHR NO2 columns. Latcorn/loncorn are 4 x n
+% fields, where the first dimension is each corner for a pixel.
+omi_lat = Data2.Latitude(xx); omi_lon = Data2.Longitude(xx);
+corner_lat = Data2.Latcorn(:,xx); corner_lon = Data2.Loncorn(:,xx);
+BEHR_NO2 = Data2.BEHRColumnAmountNO2Trop(xx); GLOBETerpres = Data2.GLOBETerpres(xx);
+OMI_NO2 = Data2.ColumnAmountNO2Trop(xx); TropopausePres = Data2.TropopausePressure(xx);
 
-% Now numerically integrate the columns.
-no2_integrated_col = -127*ones(1,numel(no2));
-dz = 1; % width of integration step in meters
-for c = 1:numel(no2)
+% Remove from consideration all pixels whose corners fall entirely outside
+% the range of lat/lons that the aircraft flew
+if DEBUG_LEVEL > 0; fprintf('   Removing pixels outside aircraft track\n'); end
+lon_logical = corner_lon > min(lon) & corner_lon < max(lon);
+lat_logical = corner_lat > min(lat) & corner_lat < max(lat);
+latlon_logical = any(lon_logical) & any(lat_logical); % any() operates on matrices along the first dimension; here that is each corner for pixel n
+
+omi_lat = omi_lat(latlon_logical);
+omi_lon = omi_lon(latlon_logical);
+corner_lat = corner_lat(:,latlon_logical);
+corner_lon = corner_lon(:,latlon_logical);
+BEHR_NO2 = BEHR_NO2(latlon_logical);
+OMI_NO2 = OMI_NO2(latlon_logical);
+GLOBETerpres = GLOBETerpres(latlon_logical);
+TropopausePres = TropopausePres(latlon_logical);
+
+% Make the matrix to save the integrated aircraft columns to
+DC8_NO2 = -9e9*ones(size(BEHR_NO2));
+concNO2debug = -9e9*ones(size(BEHR_NO2));
+BLHdebug = -9e9*ones(size(BEHR_NO2));
+
+% For each pixel left, find all aircraft measurments that fall within that
+% pixel.
+for a=1:numel(BEHR_NO2)
+    if DEBUG_LEVEL > 1; fprintf('   Pixel %d of %d\n',a,numel(BEHR_NO2)); end
+    IN = inpolygon(lon,lat,corner_lon(:,a),corner_lat(:,a));
+    lon_pix = lon(IN); lat_pix = lat(IN);
+    no2_pix = no2(IN); interp_height_pix = interp_height(IN);
+    alt_pix = alt(IN);
     
-    if alt(c) > interp_height(c);
-        if DEBUG_LEVEL > 1; fprintf('\t Column %d of %d - above BL\n',c,numel(no2)); end
-        no2_column = NaN; %Skip any columns where the plane is above the BL
-    elseif no2(c) < 0;
-        no2_column = NaN; %Also skip any columns where the NO2 measurement is negative
-    else
-        if DEBUG_LEVEL > 1; fprintf('\t Column %d of %d\n',c,numel(no2)); end
-        % We'll integrate in groups of 1 m (100 cm)
+    % Remove measurements above the boundary layer and that have an no2
+    % measurement more than 2 std. dev. away from the mean
+    in_BL = alt_pix <= interp_height_pix;
+    
+    mean_no2 = nanmean(no2_pix); std_no2 = nanstd(no2_pix);
+    no2_lower_bound = mean_no2 - 2*std_no2; no2_upper_bound = mean_no2 + 2*std_no2;
+    in_std = no2_pix >= no2_lower_bound & no2_pix <= no2_upper_bound;
+    
+    no2_pix = no2_pix(in_BL & in_std); interp_height_pix = interp_height_pix(in_BL & in_std);
+    
+    if numel(no2_pix) < 20 % If there are not 20 measurments within this pixel, skip it
+        continue
+    else % Otherwise, average the NO2 measurement and integrate from ground height to tropopause of the pixel
+        mean_no2_pix = nanmean(no2_pix); concNO2debug(a) = mean_no2_pix;
+        BLH = nanmedian(interp_height_pix)*1000; BLHdebug(a) = BLH;
+        
+        % Prepare variables from the BEHR Data Structure
+        % Standard values for scale height and P0 used here because these
+        % values are not derived from the aircraft data
+        surface_alt = round(-log(GLOBETerpres(a)/1013.25)*7400);
+        TP_pres = TropopausePres(a);
+        TP_alt = round(-log(TP_pres/1013.25)*7400);
+        
+        % Integrate the column in dz meter increments
         no2_column = 0;
-        BLH = round(interp_height(c)*1000); %Get the boundary layer height in meters
-        
-        % Find the OMI pixel that corresponds to this measurement, get the
-        % tropopause altitude
-        dlat = abs(omi_lat - lat(c)); dlon = abs(omi_lon - lon(c));
-        dtot = dlat + dlon; xx = (dtot == min(dtot(:)));
-        TP_alt = round(log(TP_pres(xx)/P0)*(-H)*1000); % Converted to meters
-        
-        %Radar altitude is the distance from the plane to surface, pressure
-        %altitude is the planes "absolute" altitude, therefore the surface
-        %altitude should be the difference.  Convert to meters.
-%        surface_alt = round((alt(c) - radar_alt(c))*1000); 
-        
-        % Since the radar was apparently broken on all four ARCTAS flights,
-        % we'll instead find the closest GLOBE measurement and use that for
-        % surface altitude
-        
-        dlat = abs(globe_lat_matrix - lat(c)); dlon = abs(globe_lon_matrix - lon(c));
-        dtot = dlat + dlon; xx = (dtot == min(dtot(:)));
-        surface_alt = round(terpres(xx)); % Globe measurements should be in meters above sea level
+        dz = 1;
         
         if surface_alt < BLH
             % Surface to boundary layer
@@ -273,7 +306,7 @@ for c = 1:numel(no2)
                     %T = polyval(T_poly_free,h/1000);
                     T = T_poly_free(1)*(h/1000) + T_poly_free(2);
                 end
-                conc_NO2 = (Av * P * no2(c)*1e-12)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv
+                conc_NO2 = (Av * P * mean_no2_pix*1e-12)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv
                 no2_column = no2_column + conc_NO2 * dz * 100; % Integrating in 100dz cm increments
             end
             % Boundary layer to tropopause
@@ -294,60 +327,15 @@ for c = 1:numel(no2)
                 no2_column = no2_column + conc_NO2 * dz * 100; % Integrating in 100dz cm increments
             end
         end
+        DC8_NO2(a) = no2_column;
     end
-    no2_integrated_col(c) = no2_column;
 end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%% AVERAGE COLUMNS TO PIXELS  %%%%  
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-if DEBUG_LEVEL > 0; fprintf(' Averaging columns to pixels\n'); end
-
-% Find pixels that fail the criteria used for BEHR mapping.
-% omi_pixel_reject.m works by setting Areaweight to 0 for any pixels that
-% fail the criteria. Hence, we need to create an areaweight field that
-% assumes all pixels are valid.
-
-Data.Areaweight = ones(size(Data.Longitude));
-if DEBUG_LEVEL > 0; fprintf('   Rejecting with omi_pixel_reject.m\n'); end
-Data2 = omi_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
-xx = Data2.Areaweight > 0;
-
-% Read in corner lat/lon and BEHR NO2 columns. Latcorn/loncorn are 4 x n
-% fields, where the first dimension is each corner for a pixel.
-omi_lat = Data2.Latitude(xx); omi_lon = Data2.Longitude(xx);
-corner_lat = Data2.Latcorn(:,xx); corner_lon = Data2.Loncorn(:,xx);
-BEHR_NO2 = Data2.BEHRColumnAmountNO2Trop(xx);
-OMI_NO2 = Data2.ColumnAmountNO2Trop(xx);
-
-% Remove from consideration all pixels whose corners fall entirely outside
-% the range of lat/lons that the aircraft flew
-if DEBUG_LEVEL > 0; fprintf('   Removing pixels outside aircraft track\n'); end
-lon_logical = corner_lon > min(lon) & corner_lon < max(lon);
-lat_logical = corner_lat > min(lat) & corner_lat < max(lat);
-latlon_logical = any(lon_logical) & any(lat_logical); % any() operates on matrices along the first dimension; here that is each corner for pixel n
-
-omi_lat = omi_lat(latlon_logical);
-omi_lon = omi_lon(latlon_logical);
-corner_lat = corner_lat(:,latlon_logical);
-corner_lon = corner_lon(:,latlon_logical);
-BEHR_NO2 = BEHR_NO2(latlon_logical);
-OMI_NO2 = OMI_NO2(latlon_logical);
-
-% For each pixel that remains, average the aircraft columns to each pixel
-if DEBUG_LEVEL > 0; fprintf('   Averaging columns\n'); end
-DC8_NO2 = NaN(size(BEHR_NO2));
-for a=1:numel(BEHR_NO2)
-    if DEBUG_LEVEL > 1; fprintf('   Pixel %d of %d\n',a,numel(BEHR_NO2)); end
-    IN = inpolygon(lon,lat,corner_lon(:,a),corner_lat(:,a));
-    DC8_NO2(a) = nanmean(no2_integrated_col(IN));
+fills = DC8_NO2 == -9e9;
+omi_lon = omi_lon(~fills);
+omi_lat = omi_lat(~fills);
+DC8_NO2 = DC8_NO2(~fills);
+OMI_NO2 = OMI_NO2(~fills);
+BEHR_NO2 = BEHR_NO2(~fills);
+concNO2debug = concNO2debug(~fills);
+BLHdebug = BLHdebug(~fills);
 end
-
-% Finally, remove pixels that didn't have any aircraft measurements
-notnans = ~isnan(DC8_NO2);
-omi_lat = omi_lat(notnans); omi_lon = omi_lon(notnans);
-BEHR_NO2 = BEHR_NO2(notnans); OMI_NO2 = OMI_NO2(notnans);
-DC8_NO2 = DC8_NO2(notnans);
-end
-

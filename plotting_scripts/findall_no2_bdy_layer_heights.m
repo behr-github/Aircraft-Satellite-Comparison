@@ -1,4 +1,4 @@
-function [ blh, utc ] = findall_no2_bdy_layer_heights(utc_in,no2,alt_no2,ranges_in)
+function [ blh, utc ] = findall_no2_bdy_layer_heights(utc_in,no2,alt_no2,ranges_in,varargin)
 %findall_no2_bdy_layer_heights(utc, no2, ranges): Finds the boundary layer crossing for each range passed.
 %   This function finds the NO2 chemical boundary layer in aircraft data by
 %   examining the NO2 data during times when the aircraft is constantly
@@ -12,7 +12,11 @@ function [ blh, utc ] = findall_no2_bdy_layer_heights(utc_in,no2,alt_no2,ranges_
 %
 %   This returns two values, the boundary layer heights and median UTC
 %   times of each range.
-
+p = inputParser;
+p.addOptional('blmode','max',@isstr)
+p.parse(varargin{:});
+pout = p.Results;
+method = pout.blmode;
 % Remove any ranges that are entirely outside our UTC range
 range_start_test = ranges_in' < min(utc_in);
 range_end_test = ranges_in' > max(utc_in);
@@ -43,21 +47,33 @@ else
         utc(a) = nanmedian(utc_in(startind:endind));
         
         % Bin the data so that the vertical profiles are less noisy
-        [no2seg, altseg] = bin_vertical_profile(altseg,no2seg,0.5);
+        [no2seg, altseg] = bin_vertical_profile(altseg,no2seg,0.3);
         
-%         % For most measurements, to find the boundary layer, we look for the
-%         % altitude at which the [NO2] is 1/e of its maximum value (as well as
-%         % requiring that d[NO2]/dz < 0).  However, when 1 e-fold of the max
-%         % value is < 40 pptv, this method tends to run into problems because
-%         % the average [NO2] above the BL is ~40 pptv. Thus, when this is the
-%         % case, we look for the greatest gradient in NO2, with d[NO2]/dz < 0
-%         if max(no2seg(:))*exp(-1) < 40;
-%             method = 'max';
-%         else
-%             method = 'exp';
-%         end
-        method = 'max'; % 23 Jun 2014: We're going to try just looking for the maximum gradient to see if that brings the column densities down
-        blh(a) = find_bdy_layer_height(no2seg, altseg,method);
+        %         % For most measurements, to find the boundary layer, we look for the
+        %         % altitude at which the [NO2] is 1/e of its maximum value (as well as
+        %         % requiring that d[NO2]/dz < 0).  However, when 1 e-fold of the max
+        %         % value is < 40 pptv, this method tends to run into problems because
+        %         % the average [NO2] above the BL is ~40 pptv. Thus, when this is the
+        %         % case, we look for the greatest gradient in NO2, with d[NO2]/dz < 0
+        %         if max(no2seg(:))*exp(-1) < 40;
+        %             method = 'max';
+        %         else
+        %             method = 'exp';
+        %         end
+        %        method = 'max'; % 23 Jun 2014: We're going to try just looking for the maximum gradient to see if that brings the column densities down
+        
+        tmp = find_bdy_layer_height(no2seg, altseg,method);
+        f = figure('OuterPosition',[1,1,512,512]); 
+        plot(no2seg,altseg,'marker','o','linewidth',2); 
+        title(sprintf('BL Method = %s',method),'fontsize',16);
+        line([min(no2seg),max(no2seg)],[tmp, tmp],'linestyle',':','color','k','linewidth',2);
+        choice = questdlg('Is this boundary layer height acceptable?','BLH','Yes','No','Yes');
+        if strcmpi(choice,'yes');
+            blh(a) = tmp;
+        else
+            blh(a) = NaN;
+        end
+        close(f);
     end
     
     % Clean up the output: if any fill values (-99) are left, remove those
