@@ -1,4 +1,4 @@
-function [ blh, utc ] = findall_no2_bdy_layer_heights(utc_in,no2,alt_no2,ranges_in,varargin)
+function [ blh, utc, choices ] = findall_no2_bdy_layer_heights(utc_in,no2,alt_no2,ranges_in,varargin)
 %findall_no2_bdy_layer_heights(utc, no2, ranges): Finds the boundary layer crossing for each range passed.
 %   This function finds the NO2 chemical boundary layer in aircraft data by
 %   examining the NO2 data during times when the aircraft is constantly
@@ -13,10 +13,12 @@ function [ blh, utc ] = findall_no2_bdy_layer_heights(utc_in,no2,alt_no2,ranges_
 %   This returns two values, the boundary layer heights and median UTC
 %   times of each range.
 p = inputParser;
-p.addOptional('blmode','max',@isstr)
+p.addOptional('choices',[]);
+p.addParamValue('blmode','max',@isstr)
 p.parse(varargin{:});
 pout = p.Results;
 method = pout.blmode;
+choices_in = pout.choices;
 % Remove any ranges that are entirely outside our UTC range
 range_start_test = ranges_in' < min(utc_in);
 range_end_test = ranges_in' > max(utc_in);
@@ -39,6 +41,7 @@ else
     blh = -99*ones(s(1),1);
     utc = -99*ones(s(1),1);
     
+    choices = cell(1,s(1)); % Stores answers to whether each BLH is correct or not
     for a=1:s(1)
         startind = find(abs(utc_in - ranges(a,1)) == min(abs(utc_in - ranges(a,1))));
         endind = find(abs(utc_in - ranges(a,2)) == min(abs(utc_in - ranges(a,2))));
@@ -63,17 +66,22 @@ else
         %        method = 'max'; % 23 Jun 2014: We're going to try just looking for the maximum gradient to see if that brings the column densities down
         
         tmp = find_bdy_layer_height(no2seg, altseg,method);
-        f = figure('OuterPosition',[1,1,512,512]); 
-        plot(no2seg,altseg,'marker','o','linewidth',2); 
-        title(sprintf('BL Method = %s',method),'fontsize',16);
-        line([min(no2seg),max(no2seg)],[tmp, tmp],'linestyle',':','color','k','linewidth',2);
-        choice = questdlg('Is this boundary layer height acceptable?','BLH','Yes','No','Yes');
+        if isempty(choices_in);
+            f = figure('OuterPosition',[1,1,512,512]);
+            plot(no2seg,altseg,'marker','o','linewidth',2);
+            title(sprintf('BL Method = %s',method),'fontsize',16);
+            line([min(no2seg),max(no2seg)],[tmp, tmp],'linestyle',':','color','k','linewidth',2);
+            choice = questdlg('Is this boundary layer height acceptable?','BLH','Yes','No','Yes');
+        else
+            choice = choices_in{a};
+        end
+        choices{a} = choice;
         if strcmpi(choice,'yes');
             blh(a) = tmp;
         else
             blh(a) = NaN;
         end
-        close(f);
+        if isempty(choices_in); close(f); end
     end
     
     % Clean up the output: if any fill values (-99) are left, remove those

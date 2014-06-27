@@ -1,4 +1,4 @@
-function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2, corner_lon, corner_lat, concNO2debug, BLHdebug] = boundary_layer_verification( Merge, Data, tz, varargin )
+function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2, corner_lon, corner_lat, choices, concNO2debug, BLHdebug] = boundary_layer_verification( Merge, Data, tz, varargin )
 %[ pix_lon, pix_lat, OMI_NO2, BEHR_NO2, aircraft_NO2]
 %
 %boundary_layer_verification: Compare satellite and aircraft measurements
@@ -44,6 +44,7 @@ p = inputParser;
 p.addRequired('Merge',@isstruct);
 p.addRequired('Data',@isstruct);
 p.addRequired('timezone', @(x) any(strcmpi(x,{'est','cst','mst','pst',})));
+p.addOptional('choices',struct('no2',[],'h2o',[],'theta',[]),@isstruct)
 p.addParamValue('timerange',{'12:00','15:00'},@iscell)
 p.addParamValue('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis'})));
 p.addParamValue('cloud_frac_max',0.2, @isscalar);
@@ -59,6 +60,7 @@ if numel(Data)>1; error('bdy_layer_verify:DataInput','Only pass one top-level el
 Merge = pout.Merge;
 Data = pout.Data;
 tz = pout.timezone;
+choices_in = pout.choices;
 timerange = pout.timerange;
 cloud_prod = pout.cloud_product;
 cloud_frac_max = pout.cloud_frac_max;
@@ -91,64 +93,15 @@ range_dates = {datestr(Ranges(1).Date,29), datestr(Ranges(2).Date,29), datestr(R
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%  RESTRICT TO TIME RANGE  %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% Remove any values outside the time range (12:00-3:00p local standard by
-% default)
-utcstart = local2utc(timerange{1}, tz); utcend = local2utc(timerange{2}, tz);
-time_logical = utc_raw >= utcstart & utc_raw <= utcend;
-no2 = no2_raw(time_logical);
-alt = alt_raw(time_logical);
-radar_alt = radar_alt_raw(time_logical);
-utc = utc_raw(time_logical);
-lat = lat_raw(time_logical);
-lon = lon_raw(time_logical);
-pressure = pressure_raw(time_logical);
-theta = theta_raw(time_logical);
-h2o = h2o_raw(time_logical);
-
-% We do not want to restrict temperature, as it will be used to get a
-% temperature profile for conversion of
-
-% Find any fill, ULOD, or LLOD values in any of the imported data sets relating to NO2
-% and remove them.
-no2_fill = Merge.Data.NO2_UCB.Fill;
-alt_fill = Merge.Data.ALTP.Fill;
-%ralt_fill = Merge.Data.Radar_Altitude.Fill;
-lat_fill = Merge.Data.LATITUDE.Fill;
-lon_fill = Merge.Data.LONGITUDE.Fill;
-pres_fill = Merge.Data.PRESSURE.Fill;
-theta_fill = Merge.Data.THETA.Fill;
-h2o_fill = Merge.Data.H2Ov.Fill;
-
-fill_logical = no2 ~= no2_fill & alt ~= alt_fill & lat ~= lat_fill & lon ~= lon_fill & pressure ~= pres_fill;
-theta_logical = theta ~= theta_fill & alt ~= alt_fill & lat ~= lat_fill & lon ~= lon_fill & pressure ~= pres_fill;
-h2o_logical = h2o ~= h2o_fill & alt ~= alt_fill & lat ~= lat_fill & lon ~= lon_fill & pressure ~= pres_fill;
-
-ulod = Merge.metadata.upper_lod_flag;
-llod = Merge.metadata.lower_lod_flag;
-
-lod_logical = no2 ~= ulod & no2 ~= llod & alt ~= ulod & alt ~= llod & pressure ~= ulod & pressure ~= llod; % Lat, lon, radar altitude, and utc should not be subject to limits of detection
-
-h2o = h2o(h2o_logical); alt_h2o = alt(h2o_logical); utc_h2o = utc(h2o_logical);
-theta = theta(theta_logical); alt_theta = alt(theta_logical); utc_theta = utc(theta_logical);
-
-no2 = no2(lod_logical & fill_logical);
-alt = alt(lod_logical & fill_logical);
-radar_alt = radar_alt(lod_logical & fill_logical);
-utc = utc(lod_logical & fill_logical);
-lat = lat(lod_logical & fill_logical);
-lon = lon(lod_logical & fill_logical);
-pressure = pressure(lod_logical & fill_logical);
+[no2, utc, alt, lon, lat] = remove_merge_fills(Merge,'NO2_UCB');
+[h2o, utc_h2o, alt_h2o] = remove_merge_fills(Merge,'H2Ov');
+[theta, utc_theta, alt_theta] = remove_merge_fills(Merge,'THETA');
 
 
-
-% Now for temperature
-temperature_fill = Merge.Data.TEMPERATURE.Fill;
-T_fill_logical = temperature_raw ~= temperature_fill & alt_raw ~= alt_fill;
-T_lod_logical = temperature_raw ~= ulod & temperature_raw ~= llod & alt_raw ~= ulod & alt_raw ~= llod;
-temperature = temperature_raw(T_fill_logical & T_lod_logical);
-alt_T = alt_raw(T_fill_logical & T_lod_logical);
-utc_T = utc_raw(T_fill_logical & T_lod_logical);
+% Now for temperature - actually remove these values
+[temperature, utc_T, alt_T, ~, ~, xx_T] = remove_merge_fills(Merge,'TEMPERATURE');
+alt_T = alt_T(~xx_T);
+utc_T = utc_T(~xx_T);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%  FIND BDY LAYER HEIGHTS  %%%%%
@@ -158,9 +111,9 @@ if DEBUG_LEVEL > 0; fprintf(' Calculating & interpolating boundary layer heights
 % Get the range for today;
 d = find(datenum(range_dates) == datenum(merge_date));
 
-[heights_no2, times] = findall_no2_bdy_layer_heights(utc, no2, alt, Ranges(d).Ranges);
-[heights_h2o, times_h2o] = findall_no2_bdy_layer_heights(utc_h2o, h2o, alt_h2o, Ranges(d).Ranges);
-[heights_theta, times_theta] = findall_no2_bdy_layer_heights(utc_theta, theta, alt_theta, Ranges(d).Ranges,'theta');
+[heights_no2, times, choices.no2] = findall_no2_bdy_layer_heights(utc, no2, alt, Ranges(d).Ranges,choices_in.no2);
+[heights_h2o, ~, choices.h2o] = findall_no2_bdy_layer_heights(utc_h2o, h2o, alt_h2o, Ranges(d).Ranges,choices_in.h2o);
+[heights_theta, ~, choices.theta] = findall_no2_bdy_layer_heights(utc_theta, theta, alt_theta, Ranges(d).Ranges,choices_in.theta,'blmode','theta');
 
 tmp = [heights_no2, heights_h2o, heights_theta];
 heights = nanmean(tmp,2);
@@ -184,10 +137,19 @@ if last_height < numel(interp_height)
     interp_height(last_height+1:end) = interp_height(last_height);
 end
 
-% Now clip the interpolated height to the time range and clear values
+% Remove any values outside the time range (12:00-3:00p local standard by
+% default)
+utcstart = local2utc(timerange{1}, tz); utcend = local2utc(timerange{2}, tz);
+time_logical = utc_raw >= utcstart & utc_raw <= utcend;
+no2 = no2(time_logical);
+alt = alt(time_logical);
+utc = utc(time_logical);
+lat = lat(time_logical);
+lon = lon(time_logical);
+
+% Also clip the interpolated height to the time range and clear values
 % corresponding to NO2 fills/lod flags
 interp_height = interp_height(time_logical);
-interp_height = interp_height(lod_logical & fill_logical);
 figure; plot(utc,alt); line(utc,interp_height,'color','r'); title(merge_date);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% PREP TEMP AND PRESSURE DATA %%%%%
