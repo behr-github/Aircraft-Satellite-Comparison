@@ -32,6 +32,7 @@ p.addParamValue('siteflag',[-1e3,1e3],@isnumeric);
 p.addParamValue('profnum',[-1e10,1e10],@isnumeric);
 p.addParamValue('binwidth',-1,@isscalar);
 p.addParamValue('binmode','median',@(x) any(strcmpi(x,{'median','mean'})));
+p.addParamValue('opmode','std',@(x) any(strcmpi(x,{'std','std.','standard','rolling'})));
 
 p.parse(Merge_in,data_field,varargin{:});
 pout = p.Results;
@@ -42,6 +43,7 @@ siteflag = [min(pout.siteflag), max(pout.siteflag)];
 profnum = [min(pout.profnum), max(pout.profnum)];
 binwidth = pout.binwidth;
 binmode = pout.binmode;
+opmode = pout.opmode;
 
 % Find the entries that have the desired site flag and profile number, if
 % we are using discover-aq data.  Otherwise, just import the data.
@@ -88,7 +90,13 @@ altitude = -log(pressures ./ 1013.25) .* 7.4;
 if binwidth < 0;
     scatter(data_vals,altitude);
 else
-    [bin_avgs, bin_midpoints, bin_error] = bin_vertical_profile(altitude,data_vals,binwidth,binmode);
+    if strcmpi(opmode,'rolling')
+        [bin_avgs, bin_midpoints, bin_error] = bin_rolling_vertical_profile(altitude,data_vals,binwidth,0.1,binmode);
+        xx = find(isnan(bin_avgs)); %Removes nans to ensure that the error envelope plots. 
+        bin_avgs(xx) = []; bin_midpoints(xx) = []; bin_error(:,xx) = [];
+    else
+        [bin_avgs, bin_midpoints, bin_error] = bin_vertical_profile(altitude,data_vals,binwidth,binmode);
+    end
     
     % Make a line plot of the vertical profile with the standard error
     % plotted as an envelope
@@ -96,7 +104,7 @@ else
     if strcmpi(binmode,'mean')
         plot_error_envelope_x(bin_midpoints, bin_avgs - bin_error, bin_avgs + bin_error);
     else
-        plot_error_envelope_x(bin_midpoints, bin_error(:,1)', bin_error(:,2)');
+        plot_error_envelope_x(bin_midpoints, bin_error(1,:), bin_error(2,:));
     end
     hold on
     plot(bin_avgs, bin_midpoints);

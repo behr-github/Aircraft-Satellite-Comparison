@@ -1,4 +1,4 @@
-function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2, concNO2debug, BLHdebug] = boundary_layer_verification( Merge, Data, tz, varargin )
+function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2, corner_lon, corner_lat, concNO2debug, BLHdebug] = boundary_layer_verification( Merge, Data, tz, varargin )
 %[ pix_lon, pix_lat, OMI_NO2, BEHR_NO2, aircraft_NO2]
 %
 %boundary_layer_verification: Compare satellite and aircraft measurements
@@ -188,7 +188,7 @@ end
 % corresponding to NO2 fills/lod flags
 interp_height = interp_height(time_logical);
 interp_height = interp_height(lod_logical & fill_logical);
-
+figure; plot(utc,alt); line(utc,interp_height,'color','r'); title(merge_date);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% PREP TEMP AND PRESSURE DATA %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -212,6 +212,7 @@ X = A\b; ML_height = X(1)*1000;
 % thus H = -1/slope and P0 = e^(intercept)
 P = polyfit(alt_raw,log(pressure_raw),1);
 P0 = exp(P(2)); H = -1/P(1);
+
 
 % Also, define Avogadro's number and gas constant;
 Av = 6.022e23; % molec. / mol
@@ -237,6 +238,7 @@ omi_lat = Data2.Latitude(xx); omi_lon = Data2.Longitude(xx);
 corner_lat = Data2.Latcorn(:,xx); corner_lon = Data2.Loncorn(:,xx);
 BEHR_NO2 = Data2.BEHRColumnAmountNO2Trop(xx); GLOBETerpres = Data2.GLOBETerpres(xx);
 OMI_NO2 = Data2.ColumnAmountNO2Trop(xx); TropopausePres = Data2.TropopausePressure(xx);
+vza = Data2.ViewingZenithAngle(xx);
 
 % Remove from consideration all pixels whose corners fall entirely outside
 % the range of lat/lons that the aircraft flew
@@ -253,6 +255,7 @@ BEHR_NO2 = BEHR_NO2(latlon_logical);
 OMI_NO2 = OMI_NO2(latlon_logical);
 GLOBETerpres = GLOBETerpres(latlon_logical);
 TropopausePres = TropopausePres(latlon_logical);
+vza = vza(latlon_logical);
 
 % Make the matrix to save the integrated aircraft columns to
 DC8_NO2 = -9e9*ones(size(BEHR_NO2));
@@ -260,10 +263,10 @@ concNO2debug = -9e9*ones(size(BEHR_NO2));
 BLHdebug = -9e9*ones(size(BEHR_NO2));
 
 % Now reject any no2 measurments more than 2 sigma from the mean
-mean_no2 = nanmean(no2); std_no2 = nanstd(no2);
-no2lb = mean_no2 - 2*std_no2; no2ub = mean_no2 + 2*std_no2;
-in_std = no2 >= no2lb & no2 <= no2ub;
-no2(~in_std) = NaN;
+% mean_no2 = nanmean(no2); std_no2 = nanstd(no2);
+% no2lb = mean_no2 - 2*std_no2; no2ub = mean_no2 + 2*std_no2;
+% in_std = no2 >= no2lb & no2 <= no2ub;
+% no2(~in_std) = NaN;
 % For each pixel left, find all aircraft measurments that fall within that
 % pixel.
 for a=1:numel(BEHR_NO2)
@@ -277,9 +280,16 @@ for a=1:numel(BEHR_NO2)
     % measurement more than 2 std. dev. away from the mean
     in_BL = alt_pix <= interp_height_pix;
     
+    mean_no2 = nanmean(no2_pix); std_no2 = nanstd(no2_pix);
+    no2lb = mean_no2 - 2*std_no2; no2ub = mean_no2 + 2*std_no2;
+    in_std = no2_pix >= no2lb & no2_pix <= no2ub;
+    no2_pix(~in_std) = NaN;
+    
     no2_pix = no2_pix(in_BL); interp_height_pix = interp_height_pix(in_BL);
     
     if sum(~isnan(no2_pix)) < 20 % If there are not 20 measurments within this pixel, skip it
+        continue
+    elseif vza(a) > 60; % Do not compare the pixel if the viewing zenith angle is >60 deg. These pixels get large.
         continue
     else % Otherwise, average the NO2 measurement and integrate from ground height to tropopause of the pixel
         mean_no2_pix = nanmean(no2_pix); concNO2debug(a) = mean_no2_pix;
@@ -334,6 +344,8 @@ end
 fills = DC8_NO2 == -9e9;
 omi_lon = omi_lon(~fills);
 omi_lat = omi_lat(~fills);
+corner_lat = corner_lat(:,~fills);
+corner_lon = corner_lon(:,~fills);
 DC8_NO2 = DC8_NO2(~fills);
 OMI_NO2 = OMI_NO2(~fills);
 BEHR_NO2 = BEHR_NO2(~fills);
