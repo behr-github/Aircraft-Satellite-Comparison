@@ -91,8 +91,10 @@ load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/ARCTAS-CA Altitude Ra
 range_dates = {datestr(Ranges(1).Date,29), datestr(Ranges(2).Date,29), datestr(Ranges(3).Date,29), datestr(Ranges(4).Date,29)};
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%  RESTRICT TO TIME RANGE  %%%%%
+%%%%%       LOAD IN DATA       %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Load the data for NO2, water, and potential temperature, replacing fill
+% values with nans.
 [no2, utc, alt, lon, lat] = remove_merge_fills(Merge,'NO2_UCB');
 [h2o, utc_h2o, alt_h2o] = remove_merge_fills(Merge,'H2Ov');
 [theta, utc_theta, alt_theta] = remove_merge_fills(Merge,'THETA');
@@ -147,8 +149,7 @@ utc = utc(time_logical);
 lat = lat(time_logical);
 lon = lon(time_logical);
 
-% Also clip the interpolated height to the time range and clear values
-% corresponding to NO2 fills/lod flags
+% Also clip the interpolated height to the time range 
 interp_height = interp_height(time_logical);
 figure; plot(utc,alt); line(utc,interp_height,'color','r'); title(merge_date);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -200,7 +201,7 @@ omi_lat = Data2.Latitude(xx); omi_lon = Data2.Longitude(xx);
 corner_lat = Data2.Latcorn(:,xx); corner_lon = Data2.Loncorn(:,xx);
 BEHR_NO2 = Data2.BEHRColumnAmountNO2Trop(xx); GLOBETerpres = Data2.GLOBETerpres(xx);
 OMI_NO2 = Data2.ColumnAmountNO2Trop(xx); TropopausePres = Data2.TropopausePressure(xx);
-vza = Data2.ViewingZenithAngle(xx);
+vza = Data2.ViewingZenithAngle(xx); 
 
 % Remove from consideration all pixels whose corners fall entirely outside
 % the range of lat/lons that the aircraft flew
@@ -251,7 +252,7 @@ for a=1:numel(BEHR_NO2)
     
     if sum(~isnan(no2_pix)) < 20 % If there are not 20 measurments within this pixel, skip it
         continue
-    elseif vza(a) > 60; % Do not compare the pixel if the viewing zenith angle is >60 deg. These pixels get large.
+    elseif vza(a) > 50; % Do not compare the pixel if the viewing zenith angle is >60 deg. These pixels get large.
         continue
     else % Otherwise, average the NO2 measurement and integrate from ground height to tropopause of the pixel
         mean_no2_pix = nanmean(no2_pix); concNO2debug(a) = mean_no2_pix;
@@ -285,7 +286,6 @@ for a=1:numel(BEHR_NO2)
             % Boundary layer to tropopause
             for h=(BLH+1):dz:TP_alt
                 P = P0 * exp(-h/(H*1000));
-                %T = polyval(T_poly_free,h/1000);
                 T = T_poly_free(1)*(h/1000) + T_poly_free(2);
                 conc_NO2 = (Av * P * 40*1e-12)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv.  Assume 40 pptv in the free troposphere
                 no2_column = no2_column + conc_NO2 * dz * 100; % Integrating in 100dz cm increments
@@ -294,7 +294,6 @@ for a=1:numel(BEHR_NO2)
             % Surface to tropopause
             for h=surface_alt:dz:TP_alt
                 P = P0 * exp(-h/(H*1000));
-                %T = polyval(T_poly_free,h/1000);
                 T = T_poly_free(1)*(h/1000) + T_poly_free(2);
                 conc_NO2 = (Av * P * 40*1e-12)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv.  Assume 40 pptv in the free troposphere
                 no2_column = no2_column + conc_NO2 * dz * 100; % Integrating in 100dz cm increments
