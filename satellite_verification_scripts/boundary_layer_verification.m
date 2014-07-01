@@ -1,4 +1,4 @@
-function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2, corner_lon, corner_lat, choices, concNO2debug, BLHdebug] = boundary_layer_verification( Merge, Data, tz, varargin )
+function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2, varianceNO2, corner_lon, corner_lat, choices, concNO2debug, BLHdebug] = boundary_layer_verification( Merge, Data, tz, varargin )
 %[ pix_lon, pix_lat, OMI_NO2, BEHR_NO2, aircraft_NO2]
 %
 %boundary_layer_verification: Compare satellite and aircraft measurements
@@ -151,7 +151,7 @@ lon = lon(time_logical);
 
 % Also clip the interpolated height to the time range 
 interp_height = interp_height(time_logical);
-figure; plot(utc,alt); line(utc,interp_height,'color','r'); title(merge_date);
+%figure; plot(utc,alt); line(utc,interp_height,'color','r'); title(merge_date);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% PREP TEMP AND PRESSURE DATA %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -224,6 +224,7 @@ vza = vza(latlon_logical);
 DC8_NO2 = -9e9*ones(size(BEHR_NO2));
 concNO2debug = -9e9*ones(size(BEHR_NO2));
 BLHdebug = -9e9*ones(size(BEHR_NO2));
+varianceNO2 = -9e9*ones(size(BEHR_NO2));
 
 % Now reject any no2 measurments more than 2 sigma from the mean
 % mean_no2 = nanmean(no2); std_no2 = nanstd(no2);
@@ -252,7 +253,7 @@ for a=1:numel(BEHR_NO2)
     
     if sum(~isnan(no2_pix)) < 20 % If there are not 20 measurments within this pixel, skip it
         continue
-    elseif vza(a) > 50; % Do not compare the pixel if the viewing zenith angle is >60 deg. These pixels get large.
+    elseif vza(a) > 60; % Do not compare the pixel if the viewing zenith angle is >60 deg. These pixels get large.
         continue
     else % Otherwise, average the NO2 measurement and integrate from ground height to tropopause of the pixel
         mean_no2_pix = nanmean(no2_pix); concNO2debug(a) = mean_no2_pix;
@@ -300,6 +301,7 @@ for a=1:numel(BEHR_NO2)
             end
         end
         DC8_NO2(a) = no2_column;
+        varianceNO2(a) = (nanstd(no2_pix))/sqrt(numel(no2_pix));
     end
 end
 fills = DC8_NO2 == -9e9;
@@ -312,4 +314,5 @@ OMI_NO2 = OMI_NO2(~fills);
 BEHR_NO2 = BEHR_NO2(~fills);
 concNO2debug = concNO2debug(~fills);
 BLHdebug = BLHdebug(~fills);
+varianceNO2 = varianceNO2(~fills);
 end
