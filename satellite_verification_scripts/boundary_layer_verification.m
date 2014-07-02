@@ -151,7 +151,7 @@ lon = lon(time_logical);
 
 % Also clip the interpolated height to the time range 
 interp_height = interp_height(time_logical);
-figure; plot(utc,alt); line(utc,interp_height,'color','r'); title(merge_date);
+%figure; plot(utc,alt); line(utc,interp_height,'color','r'); title(merge_date);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% PREP TEMP AND PRESSURE DATA %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
