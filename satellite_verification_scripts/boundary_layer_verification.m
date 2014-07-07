@@ -39,6 +39,8 @@ function [omi_lon, omi_lat, OMI_NO2, BEHR_NO2, DC8_NO2, varianceNO2, corner_lon,
 %
 %   DEBUG_LEVEL: The level of output messages to write; 0 = none, 1 =
 %   normal; 2 = verbose
+%
+%   Josh Laughner <joshlaugh5@gmail.com> June 2014
 
 p = inputParser;
 p.addRequired('Merge',@isstruct);
@@ -86,7 +88,7 @@ merge_date = Merge.metadata.date;
 % Load the file containing the altitude ranges in which to look for
 % boundary layer crossings. Loads the variable "Ranges," a structure.
 
-load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/ARCTAS-CA Altitude Ranges Exclusive.mat');
+load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/ARCTAS-CA Altitude Ranges Exclusive 2.mat');
 % Store the date corresponding to each index for easy searching later
 range_dates = {datestr(Ranges(1).Date,29), datestr(Ranges(2).Date,29), datestr(Ranges(3).Date,29), datestr(Ranges(4).Date,29)};
 
@@ -233,6 +235,7 @@ varianceNO2 = -9e9*ones(size(BEHR_NO2));
 % no2(~in_std) = NaN;
 % For each pixel left, find all aircraft measurments that fall within that
 % pixel.
+vza_rej = 0;
 for a=1:numel(BEHR_NO2)
     if DEBUG_LEVEL > 1; fprintf('   Pixel %d of %d\n',a,numel(BEHR_NO2)); end
     IN = inpolygon(lon,lat,corner_lon(:,a),corner_lat(:,a));
@@ -254,6 +257,7 @@ for a=1:numel(BEHR_NO2)
     if sum(~isnan(no2_pix)) < 20 % If there are not 20 measurments within this pixel, skip it
         continue
     elseif vza(a) > 60; % Do not compare the pixel if the viewing zenith angle is >60 deg. These pixels get large.
+        vza_rej = vza_rej+1;
         continue
     else % Otherwise, average the NO2 measurement and integrate from ground height to tropopause of the pixel
         mean_no2_pix = nanmean(no2_pix); concNO2debug(a) = mean_no2_pix;
@@ -304,6 +308,7 @@ for a=1:numel(BEHR_NO2)
         varianceNO2(a) = (nanstd(no2_pix))/sqrt(numel(no2_pix));
     end
 end
+fprintf('Num. pixels rejected for VZA = %d\n',vza_rej);
 fills = DC8_NO2 == -9e9;
 omi_lon = omi_lon(~fills);
 omi_lat = omi_lat(~fills);

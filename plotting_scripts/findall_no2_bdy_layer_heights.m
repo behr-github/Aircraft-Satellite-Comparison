@@ -12,6 +12,8 @@ function [ blh, utc, choices ] = findall_no2_bdy_layer_heights(utc_in,no2,alt_no
 %
 %   This returns two values, the boundary layer heights and median UTC
 %   times of each range.
+%
+%   Josh Laughner <joshlaugh5@gmail.com> June 2014
 p = inputParser;
 p.addOptional('choices',[]);
 p.addParamValue('blmode','max',@isstr)

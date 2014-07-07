@@ -1,13 +1,16 @@
-% Plot BLH profiles
+% show_bl_profiles.m
+%
 % Finds BLH heights and plots the part of the flight path that they were
 % determined from, along with the vertical profiles of NO2, H2O, and theta.
+%
+%   Josh Laughner <joshlaugh5@gmail.com> 2 Jul 2014
 
-date = '618'; %month and day (mdd) with no separators
-choice_ind = 2;
-range_ind = 1;
+date = '624'; %month and day (mdd) with no separators
+choice_ind = 8;
+range_ind = 4;
 
 load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/Scratch/ARCTAS Verification -  AMF using OMI cldfrac.mat');
-%load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/Scratch/BLH_choices.mat');
+load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/Scratch/BLH_choices modified 2.mat');
 load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/ARCTAS-CA Altitude Ranges Exclusive 2.mat');
 Merge = eval(sprintf('Merge%s',date));
 
