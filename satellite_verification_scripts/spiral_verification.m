@@ -320,7 +320,7 @@ for p=1:n
                 alt_profile = altbins(1):(dz/1000):altbins(end);
                 no2_profile = interp1(altbins,no2bins,alt_profile,'linear');
                 temp_profile = interp1(altbins,tempbins,alt_profile,'linear');
-                pres_profile = exp(interp1(altbins,log(presbins),alt_profile,'linear'));
+                pres_profile = exp(interp1(altbins,log(presbins),alt_profile,'linear')); % Linearly interpolate ln(P) since that is what depends linearly on altitude
                 
                 % Carry out the numerical integration
                 no2_column = 0;
