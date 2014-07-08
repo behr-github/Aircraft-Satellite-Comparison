@@ -18,6 +18,16 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, cov
 %   and the fraction of spiral measurments that fall within the pixel
 %   boundary.
 %
+%   The sixth output is a 16-bit integer that is a quality flag for the
+%   column, similar to the vcdQualityFlag and XTrackFlag in the OMNO2
+%   product.  Use bitget() to check the status of individual bits; the
+%   meaning of each bit is specified here:
+%       1st: Summary, set to 1 if any flags are set.
+%       2nd: Reserved as a second summary bit against future need.
+%       3rd: Indicates the column top was derived from a daily composite
+%           rather than extrapolation of the top median NO2 values.
+%       4-16: Unused
+%
 %   Parameters:
 %
 %   profiles: Allows the user to pass either (1) the name of
@@ -129,16 +139,35 @@ temperature = remove_merge_fills(Merge,'TEMPERATURE');
 % associated temperature and pressure values) and append these as the top
 % of tropopause value.
 tt = utc >= local2utc('10:45',tz) & utc <= local2utc('16:45',tz);
-[no2_composite, alt_composite] = bin_rolling_vertical_profile(alt(tt),no2(tt),0.5,0.1);
-[alt_composite, no2_composite] = fill_nans(alt_composite, no2_composite); % Remove trailing NaNs and interpolate any internal ones
-temp_composite = bin_rolling_vertical_profile(alt(tt), temperature(tt), 0.5, 0.1,'binstart','defined','bincenter',alt_composite);
-pres_composite = bin_rolling_vertical_profile(alt(tt), pres(tt), 0.5, 0.1,'binstart','defined','bincenter',alt_composite);
+[no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
+temp_composite = bin_omisp_pressure(pres(tt),temperature(tt));
 
-M1 = sortrows([alt_composite', no2_composite', temp_composite', pres_composite']);
-top = find(~isnan(M1(:,2)),10,'last');
-no2_comp_top_med = median(M1(top,2)); temp_comp_top_med = nanmedian(M1(top,3)); pres_comp_top_med = nanmedian(M1(top,4));
-no2_composite(end+1) = no2_comp_top_med; alt_composite(end+1) = 12;
-temp_composite(end+1) = temp_comp_top_med; pres_composite(end+1) = pres_comp_top_med;
+% The top bin of bin_omisp_pressure (200 hPa) is right around the normal
+% boundary of the troposphere, 12 km.  If no NO2 data is available, (i.e.
+% that bin has a value of NaN), then we'll extrapolate the median of the
+% top ten NO2 measurements to that bin.  In the loop itself, we'll adjust
+% for the changing tropopause pressure.
+if isnan(no2_composite(end)) 
+    M1 = sortrows([pres', no2', temperature']);
+    top = find(~isnan(M1(:,2)),10,'first'); % Since lower pressure = higher altitude, we want the first 10 NO2 measurements when sorted by pressure.
+    no2_comp_top_med = median(M1(top,2)); temp_comp_top_med = nanmedian(M1(top,3)); pres_comp_top_med = nanmedian(M1(top,1));
+    no2_composite(end) = no2_comp_top_med; 
+    
+    % Temperature should have a linear relationship to altitude
+    % (i.e., log(pressure)) up to the tropopause; therefore extrapolate
+    % based on the fit.
+    nans = isnan(temp_composite);
+    temp_composite(nans) = interp1(log(pres_composite(~nans)), temp_composite(~nans), log(pres_composite(nans)),'linear','extrap');
+    
+    % Do any interpolation in log-log space (per. Bucsela et. al. J.
+    % Geophys. Res. 2008, 113, D16S31) since pressure has an exponential
+    % relation to altitude.  Log-log space would assume that NO2 also has
+    % an exponential relationship to altitude.
+    [~, no2_tmp] = fill_nans(log(pres_composite),log(no2_composite));
+    no2_composite = exp(no2_tmp);
+    
+    
+end
 
 % Identify all spirals according to the 'profiles' input; reject any
 % without a start time between 10:45 and 4:45, that is, about 3 hours on
@@ -242,23 +271,23 @@ for p=1:n
     if min(radar_array{p}) > 0.5
         continue % As per Hains et. al., the bottom of the profile must reach down to at least 500 m above the surface
     else
-        % Bin the NO2 data by altitude.  The center of the bottom bin will
-        % be at the lowest altitude that has NO2 data
-        [no2bins, altbins] = bin_rolling_vertical_profile(alt_array{p}, no2_array{p}, 0.5, 0.1,'binstart','center');
-        [altbins, no2bins] = fill_nans(altbins,no2bins);
-        [tempbins, temp_altbins] = bin_rolling_vertical_profile(alt_array{p}, temp_array{p}, 0.5, 0.1, 'binstart', 'defined', 'bincenters', altbins);
-        [presbins, pres_altbins] = bin_rolling_vertical_profile(alt_array{p}, pres_array{p}, 0.5, 0.1, 'binstart', 'defined', 'bincenters', altbins);
-        % Figure out how far above the surface the plane was at its lowest,
-        % then add an extra bin at the bottom that has an NO2 concentration
-        % equal to the median of the lowest 10 NO2 measurements. Also, add
-        % an extra bin at the top that will hold the value extrapolated to
-        % the tropopause pressure.
-        M = sortrows([alt_array{p}', no2_array{p}', radar_array{p}', pres_array{p}', temp_array{p}']);
-        xx = find(~isnan(M(:,2)),10,'first'); zz = find(~isnan(M(:,2)),10,'last');
-        med_no2 = median(M(xx,2)); top_med_no2 = median(M(zz,2));
-        med_pres = nanmedian(M(xx,4)); top_med_pres = nanmedian(M(zz,4));
-        med_temp = nanmedian(M(xx,5)); top_med_temp = nanmedian(M(zz,5));
-        med_radar_alt = nanmedian(M(xx,3)); surface_alt = altbins(1)-med_radar_alt;
+        % Bin the NO2 data by pressure. 
+        [no2bins, presbins] = bin_omisp_pressure(pres_array{p}, no2_array{p});
+        [tempbins, temp_presbins] = bin_omisp_pressure(pres_array{p}, temp_array{p});
+        
+                
+        % Get the top 10 NO2 measurements; if their median value is < 100
+        % pptv, assume that the profile has sampled the free troposphere
+        % and can be extrapolated to the tropopause safely.  If not, then
+        % we will need to use the composite profile to fill in the bins
+        % above the profile top.
+        M = sortrows([pres_array{p}', no2_array{p}', radar_array{p}', temp_array{p}']);
+        xx = find(~isnan(M(:,2)),10,'last'); zz = find(~isnan(M(:,2)),10,'first');
+        bottom_med_no2 = median(M(xx,2)); top_med_no2 = median(M(zz,2));
+        bottom_med_temp = nanmedian(M(xx,4)); top_med_temp = nanmedian(M(zz,4));
+        bottom_med_radar_alt = nanmedian(M(xx,3)); bottom_med_pres = nanmedian(M(xx,1));
+        bottom_alt = -log(bottom_med_pres/1013)*7.4;
+        surface_alt = bottom_alt-bottom_med_radar_alt; surface_pres = 1013*exp(-surface_alt/7.4);
         
         % Initialize the qualtity flag for this pixel
         q_flag = uint16(0);
@@ -270,22 +299,40 @@ for p=1:n
         % column.  In the latter case, append the composite profile on top
         % of the current one.
         if top_med_no2 < 100;
-            no2bins = [med_no2, no2bins, top_med_no2]; altbins = [surface_alt, altbins, 12];
-            tempbins = [med_temp, tempbins, top_med_temp];
-            presbins = [med_pres, presbins, top_med_pres];
+            no2bins(end) = top_med_no2;
+            tempbins(end) = top_med_temp;
         else
             % Get the altitude of the highest bin in the profile and find
             % all bins in the composite profile above that
-            xx = alt_composite > max(altbins);
-            no2bins = [med_no2, no2bins, no2_composite(xx)];
-            altbins = [surface_alt, altbins, alt_composite(xx)];
-            tempbins = [med_temp, tempbins, temp_composite(xx)];
-            presbins = [med_pres, presbins, pres_composite(xx)];
+            xx = pres_composite < min(presbins(~isnan(no2bins)));
+            no2bins(xx) = no2_composite(xx);
+            tempbins(xx) = temp_composite(xx);
             
             % Set the 3rd bit of the quality flag to 1 to indicate that a
             % composite column was appended
             q_flag = bitset(q_flag,3,1);
         end
+        
+        % Fill in any NaNs with interpolated values
+        [tmp_pres, tmp_no2] = fill_nans(log(presbins),log(no2bins),'noclip');
+        no2bins = exp(tmp_no2); presbins = exp(tmp_pres);
+        [~, tempbins] = fill_nans(log(temp_presbins),tempbins,'noclip');
+        % Find the surface pressure, then compare it to the bottom bin with
+        % NO2 measurements.  If it is above the bottom bin center, reset
+        % that bin center to the surface pressure.  If below, then we'll
+        % extrapolate the median lowest 10 NO2 measurements to surface
+        % pressure.
+        bb = find(~isnan(no2bins),1,'first');
+        if surface_pres < presbins(bb);
+            presbins(bb) = surface_pres;
+        else
+            no2nans = isnan(no2bins);
+            no2bins = no2bins(~no2nans); tempbins = tempbins(~no2nans); presbins = presbins(~no2nans);
+            no2bins = [bottom_med_no2, no2bins];
+            tempbins = [bottom_med_temp, tempbins];
+            presbins = [surface_pres, presbins];
+        end
+        
         
         % Remove pixels not overlapping this profile
         if DEBUG_LEVEL > 0; fprintf('   Removing pixels outside profile track\n'); end
@@ -309,11 +356,11 @@ for p=1:n
                 continue % Pixel viewing zenith angle must not be greater than 60 degress - pixels on the edge of the track are very wide and the spiral is less likely to be representative.
             else
                 P = P+1;
-                % Insert the OMI tropopause altitude as the final altitude
-                % bin, then interpolate the NO2, temperature, and pressure
-                % values and integrate
-                TP_alt = -log(TropopausePres_p(o)/1013.25)*7.4;
-                altbins(end) = TP_alt;
+                % Insert the OMI tropopause pressure as the final pressure
+                % bin center, then convert all pressure bins to altitude,
+                % interpolate, and integrate.
+                presbins(end) = TropopausePres_p(o);
+                altbins = -log(presbins ./ 1013) * 7.4;
                 
                 % Interpolate the NO2, temperature, and pressure data
                 dz = 1; % integration segments in meters
