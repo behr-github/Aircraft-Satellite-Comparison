@@ -13,7 +13,7 @@ tz = 'est';
 merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
 behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
 
-DEBUG_LEVEL = 2;
+DEBUG_LEVEL = 0;
 
 dates = datenum(date_start):datenum(date_end);
 
@@ -46,18 +46,18 @@ for d=1:numel(dates)
     else
         error('run_spiral:tmm','Number of BEHR files for %s is not 1 or 0',datestr(dates(d)));
     end
-    
+
     for swath=1:numel(Data)
         S=S+1;
-        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, cov_i{S}, quality_i{S}] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',0);
+        [lon_ncar_md{S}, lat_ncar_md{S}, omino2_ncar_md{S}, behrno2_ncar_md{S}, airno2_ncar_md{S}, cov_ncar_md{S}, quality_ncar_md{S}, db(S).db] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',0);
     end
 end
 
 % concatenate the output
-lon_iall = cat(1,lon_i{:});
-lat_iall = cat(1,lat_i{:});
-omino2_iall = cat(1, omino2_i{:});
-behrno2_iall = cat(1, behrno2_i{:});
-airno2_iall = cat(1, airno2_i{:});
-cov_iall = cat(1, cov_i{:});
-quality_iall = cat(1,quality_i{:});
+lon_ncar_mdall = cat(1,lon_ncar_md{:});
+lat_ncar_mdall = cat(1,lat_ncar_md{:});
+omino2_ncar_mdall = cat(1, omino2_ncar_md{:});
+behrno2_ncar_mdall = cat(1, behrno2_ncar_md{:});
+airno2_ncar_mdall = cat(1, airno2_ncar_md{:});
+cov_ncar_mdall = cat(1, cov_ncar_md{:});
+quality_ncar_mdall = cat(1,quality_ncar_md{:});
