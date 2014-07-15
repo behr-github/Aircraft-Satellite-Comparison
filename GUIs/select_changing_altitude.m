@@ -23,7 +23,7 @@ function varargout = select_changing_altitude(varargin)
 
 % Edit the above text to modify the response to help select_changing_altitude
 
-% Last Modified by GUIDE v2.5 06-Jun-2014 14:15:53
+% Last Modified by GUIDE v2.5 14-Jul-2014 09:51:01
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -313,6 +313,29 @@ end
 
 guidata(hObject,handles);
 
+% --- Executes on selection change in AltField_popup.
+function AltField_popup_Callback(hObject, eventdata, handles)
+% hObject    handle to AltField_popup (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: contents = cellstr(get(hObject,'String')) returns AltField_popup contents as cell array
+%        contents{get(hObject,'Value')} returns selected item from AltField_popup
+
+
+% --- Executes during object creation, after setting all properties.
+function AltField_popup_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to AltField_popup (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: popupmenu controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+set(hObject,'String','ALTP');
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%          Additional functions         %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -360,18 +383,30 @@ S.ranges = [];
 
 function S = load_merge(S, filename)
 load(filename,'Merge');
-S.file = filename;
-utc = Merge.Data.UTC.Values;
-alt = Merge.Data.ALTP.Values;
-hold off
-alt_line = line(utc,alt,'Parent',S.alt_plot,'color',[0 0.5 0],'HitTest','off');
-hold on
-S.lines.alt_line = alt_line;
-S.ylims = get(S.alt_plot,'YLim');
-if ~isfield(S,'fills'); S.fills = []; end
-S = clearRanges(S);
-set(S.feedback_text,'String',sprintf('%s loaded',filename));
-S.range_index = 0;
+[fieldname,ok] = select_alt_field(Merge);
+if ok
+    S.file = filename;
+    utc = Merge.Data.UTC.Values;
+    alt = eval(sprintf('Merge.Data.%s.Values',fieldname));
+    hold off
+    alt_line = line(utc,alt,'Parent',S.alt_plot,'color',[0 0.5 0],'HitTest','off');
+    hold on
+    S.lines.alt_line = alt_line;
+    S.ylims = get(S.alt_plot,'YLim');
+    if ~isfield(S,'fills'); S.fills = []; end
+    S = clearRanges(S);
+    set(S.feedback_text,'String',sprintf('%s loaded',filename));
+    S.range_index = 0;
+else
+    set(S.feedback_text,'String','Canceled loading merge file.');
+end
 
-
-
+function [fieldname, ok] = select_alt_field(Merge)
+all_fields = fieldnames(Merge.Data);
+if isfield(Merge.Data,'ALTP')
+    xx = find(strcmp('ALTP',all_fields));
+else
+    xx = 1;
+end
+[fieldindex,ok] = listdlg('ListString',all_fields,'SelectionMode','single','PromptString','Select the altitude field','InitialValue',xx);
+fieldname = all_fields{fieldindex};

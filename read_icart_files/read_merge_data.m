@@ -96,6 +96,7 @@ end
 
 % Loop through all files in the folder
 numfiles = numel(merge_files);
+
 for a = 1:numfiles
     if DEBUG_LEVEL > 0; fprintf('Reading in file %s\n', merge_files(a).name); end
     
@@ -141,7 +142,7 @@ for a = 1:numfiles
     
     % Get the number of fields we'll need to handle
     numfields = str2double(fgetl(fid)); line_count = line_count + 1;
-    
+    if a==1; field_bool = -1*ones(1,numfields+1); end
     % Skip one line
     fgetl(fid); line_count = line_count + 1;
     
@@ -156,11 +157,19 @@ for a = 1:numfiles
     line_count = line_count + 1;
     
     % For each field, read the unit and fill value into the data structure
+    field_array = cell(1,numfields+1); field_array{1} = 'UTC';
     for f = 1:numfields
         line = fgetl(fid); line_count = line_count + 1;
         comma_pos = strfind(line,',');
-        field = line(1:(comma_pos-1));
-        unit = line((comma_pos+2):end);
+        if isempty(comma_pos); %Some files don't comma separate
+            comma_pos = strfind(line,' ');
+            field = line(1:(comma_pos-1));
+            unit = line((comma_pos+1):end);
+        else
+            field = line(1:(comma_pos-1));
+            unit = line((comma_pos+2):end);
+        end
+        field_array{f+1} = field;
         
         % Sanitize the field name, characters that don't belong in variable
         % names will be removed. Also, prepend 'f_' to any field names 
@@ -209,7 +218,30 @@ for a = 1:numfiles
     
     % Append the table data to the Merge structure
     for r = 1:numfields+1
-        field = header{r};
+        new_field = header{r}; old_field = field_array{r};
+        if field_bool(r) == 1;
+            field = old_field;
+        elseif field_bool(r) == 0;
+            field = new_field;
+        elseif field_bool(r) == -1;
+            if strcmp(new_field,old_field); 
+                field_bool(r) = 1;
+                field = new_field;
+            else
+                question = sprintf('Header field %s does not match expected field %s. Which should be used?',new_field, old_field);
+                choice = questdlg(question,'Field Mismatch','Header','Existing','Header for all fields','Existing for all fields','Header');
+                switch choice
+                    case 'Header'
+                        field = new_field; field_bool(r) = 0;
+                    case 'Existing'
+                        field = old_field; field_bool(r) = 1;
+                    case 'Header for all fields'
+                        field = new_field; field_bool(:) = 0;
+                    case 'Existing for all fields'
+                        field = old_field; field_bool(:) = 1;
+                end
+            end
+        end
         if DEBUG_LEVEL > 1; fprintf('\tField: %s', field); end
         data_column = DataTable(:,r)';
         eval(sprintf('Merge.Data.%s.Values = data_column;',field));

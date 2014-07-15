@@ -1,4 +1,4 @@
-function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, coverage_fraction, quality_flags, db ] = spiral_verification( Merge, Data, timezone, varargin )
+function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, air_no2_stderr, coverage_fraction, quality_flags, db ] = spiral_verification( Merge, Data, timezone, varargin )
 %[lon, lat, omi, behr, air, cov_frac] = spiral_verification(Merge,Data,timezone) Compare OMI pixel NO2 values to aircraft spirals.
 %
 %   This function is based off of the method described in Hains et. al. (J.
@@ -30,8 +30,17 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, cov
 %           data
 %       5th: Indicates that the composite profile had < 10% of the data
 %           points valid
-%       6-15: Unused
-%       16th: Set if the column was skipped due to < 1% valid NO2 data
+%       6th: Indicates that radar values from higher in the column were
+%           used to calculate the surface pressure.
+%       7th: Indicates that the GLOBE terrain database was used to find the
+%           surface pressure because no radar data was available
+%       8th: No data points fall within the time frame of +/- 3 hr from OMI
+%           overpass
+%       9th: No BEHR data for this swath (probably used an OMI_SP only
+%           file)
+%       10-15: Unused 
+%       16th: Set if the column was skipped due to < 1% valid
+%           NO2, pressure, or temperature data
 %
 %   Parameters:
 %
@@ -46,9 +55,16 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, cov
 %   no2field: Defaults to 'NO2_LIF', if this is not the NO2 field, use this
 %   parameter to override that.
 %
+%   altfield: Defaults to ALTP, which is the correct field for pressure
+%   altitude for DISCOVER campaigns.  
+%
 %   radarfield: Defaults to the correct radar altitude field name for a
 %   DISCOVER campaign based on the date of the merge file.  Use this field
 %   to override that selection.
+%
+%   presfield: Defaults to PRESSURE.
+%
+%   tempfield: Defaults to TEMPERATURE.
 %
 %   cloud_product: Which cloud product (omi or modis) to use in rejecting
 %   pixels.  Defaults to omi.
@@ -69,10 +85,13 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, cov
 p = inputParser;
 p.addRequired('Merge',@isstruct);
 p.addRequired('Data',@isstruct);
-p.addRequired('timezone', @(x) any(strcmpi(x,{'est','cst','mst','pst',})));
+p.addRequired('timezone', @(x) any(strcmpi(x,{'est','cst','mst','pst','auto'})));
 p.addParamValue('profiles',[], @(x) size(x,2)==2 || ischar(x));
 p.addParamValue('no2field','',@isstr);
+p.addParamValue('altfield','ALTP',@isstr);
 p.addParamValue('radarfield','',@isstr);
+p.addParamValue('presfield','PRESSURE',@isstr);
+p.addParamValue('tempfield','TEMPERATURE',@isstr)
 p.addParamValue('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis'})));
 p.addParamValue('cloud_frac_max',0.2, @isscalar);
 p.addParamValue('rowanomaly','AlwaysByRow',@(x) strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'}));
@@ -89,7 +108,10 @@ Data = pout.Data;
 tz = pout.timezone;
 profiles = pout.profiles;
 no2field = pout.no2field;
+altfield = pout.altfield;
 radarfield = pout.radarfield;
+presfield = pout.presfield;
+Tfield = pout.tempfield;
 cloud_prod = pout.cloud_product;
 cloud_frac_max = pout.cloud_frac_max;
 rowanomaly = pout.rowanomaly;
@@ -144,21 +166,43 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % First handle the aircraft data
-[no2, utc, alt, lon, lat] = remove_merge_fills(Merge,no2field);
+[no2, utc, alt, lon, lat] = remove_merge_fills(Merge,no2field,'alt',altfield);
 no2(no2<0) = NaN; % Must remove any negative values from consideration because they will return imaginary components during the log-log interpolation
-radar_alt = remove_merge_fills(Merge,radarfield);
-pres = remove_merge_fills(Merge,'PRESSURE');
-temperature = remove_merge_fills(Merge,'TEMPERATURE');
+radar_alt = remove_merge_fills(Merge,radarfield,'alt',altfield);
+pres = remove_merge_fills(Merge,presfield,'alt',altfield);
+temperature = remove_merge_fills(Merge,Tfield,'alt',altfield);
 
+% If the timezone was set to "auto," calculate the difference from UTC
+% based on the mean longitude
+if strcmpi(tz,'auto')
+    tz = round(nanmean(lon)/15);
+end
+
+% Check what percentage of values were fill values, if >99% are fills for
+% data, temperature, or pressure, return NaNs and set the largest bit on
+% the quality flag to 1 (as well as the summary flag). If <99% but >90%,
+% set the 5th bit to 1 as a warning.
 percent_nans = sum(isnan(no2))/numel(no2);
-if percent_nans > 0.99;
-    if DEBUG_LEVEL > 1; fprintf('%s had < 1%% of NO2 values valid\n',datestr(merge_datenum,2)); end
-    % We must skip this merge file if there is no NO2 data
+percent_nans_P = sum(isnan(pres))/numel(pres);
+percent_nans_T = sum(isnan(temperature))/numel(temperature);
+if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
+    if DEBUG_LEVEL > 1 && percent_nans > 0.99; 
+        fprintf('%s had < 1%% of NO2 values valid\n',datestr(merge_datenum,2)); 
+    end
+    if DEBUG_LEVEL > 1 && percent_nans_P > 0.99;
+        fprintf('%s had < 1%% of pressure values valid\n',datestr(merge_datenum,2));
+    end
+    if DEBUG_LEVEL > 1 && percent_nans_T > 0.99;
+        fprintf('%s had < 1%% of temperature values valid\n',datestr(merge_datenum,2));
+    end
+    % We must skip this merge file if there is no NO2, pressure, or
+    % temperature data
     omi_lon_out = NaN;
     omi_lat_out = NaN;
     omi_no2_out = NaN;
     behr_no2_out = NaN;
     air_no2_out = NaN;
+    air_no2_stderr = NaN;
     coverage_fraction = NaN;
     quality_flags = uint16(2^15+1);
     
@@ -178,6 +222,20 @@ else
     % associated temperature and pressure values) and append these as the top
     % of tropopause value.
     tt = utc >= local2utc('10:45',tz) & utc <= local2utc('16:45',tz);
+    if sum(tt) == 0 % If no points fall within the time frame, return NaNs and exit
+        omi_lon_out = NaN;
+        omi_lat_out = NaN;
+        omi_no2_out = NaN;
+        behr_no2_out = NaN;
+        air_no2_out = NaN;
+        air_no2_stderr = NaN;
+        coverage_fraction = NaN;
+        q_base = bitset(q_base,1,1); quality_flags = bitset(q_base,8,1);
+        
+        db.latcorn = NaN(4,1);
+        db.loncorn = NaN(4,1);
+        return 
+    end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
     temp_composite = bin_omisp_pressure(pres(tt),temperature(tt));
     
@@ -245,12 +303,13 @@ else
         % Find all the utc start times that are between 10:45 and 4:45 local
         % standard time
         yy = Ranges(:,1) >= local2utc('10:45',tz) & Ranges(:,1) <= local2utc('16:45',tz);
+        ranges_in_time = Ranges(yy,:);
         s = [1,sum(yy)];
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
         lat_array = cell(s); lon_array = cell(s);
         pres_array = cell(s); temp_array = cell(s);
-        for a=1:s(1)
-            xx = utc >= Ranges(a,1) & utc <= Ranges(a,2);
+        for a=1:s(2)
+            xx = utc >= ranges_in_time(a,1) & utc <= ranges_in_time(a,2);
             no2_array{a} = no2(xx);
             alt_array{a} = alt(xx);
             radar_array{a} = radar_alt(xx);
@@ -267,15 +326,33 @@ else
     
     Data.Areaweight = ones(size(Data.Longitude));
     if DEBUG_LEVEL > 0; fprintf('   Rejecting with omi_pixel_reject.m\n'); end
-    Data2 = omi_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
+    try % Handles the case of both BEHR files and SP-only files
+        Data2 = omi_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
+    catch err; 
+        if strcmp(err.identifier,'MATLAB:nonExistentField');
+            Data2 = omi_sp_pixel_reject(Data,cloud_frac_max,rowanomaly);
+        else
+            rethrow(err)
+        end
+    end
     xx = Data2.Areaweight > 0;
     
     omi_lat = Data2.Latitude(xx); omi_lon = Data2.Longitude(xx);
     corner_lat = Data2.Latcorn(:,xx); corner_lon = Data2.Loncorn(:,xx);
-    behr_no2 = Data2.BEHRColumnAmountNO2Trop(xx);
     omi_no2 = Data2.ColumnAmountNO2Trop(xx);
     TropopausePres = Data2.TropopausePressure(xx);
     vza = Data2.ViewingZenithAngle(xx);
+    try
+        behr_no2 = Data2.BEHRColumnAmountNO2Trop(xx);
+    catch err
+        if strcmp(err.identifier,'MATLAB:nonExistentField')
+            if DEBUG_LEVEL > 0; fprintf('    No BEHR data for this swath\n'); end
+            q_base = bitset(q_base,9,1);
+            behr_no2 = -127*ones(size(xx));
+        else
+            rethrow(err)
+        end
+    end
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %%%%%     MATCH PIXELS AND SPIRALS     %%%%%
@@ -290,6 +367,7 @@ else
     omi_no2_out = -9e9*ones(n*4,1);
     behr_no2_out = -9e9*ones(n*4,1);
     air_no2_out = -9e9*ones(n*4,1);
+    air_no2_stderr = -9e9*ones(n*4,1);
     coverage_fraction = -9e9*ones(n*4,1);
     quality_flags = uint16(zeros(n*4,1));
     
@@ -312,8 +390,14 @@ else
         elseif all(isnan(no2_array{p}));
             continue % If the entire profile was fill values (i.e. instrument trouble) obviously we have to skip this profile.
         else
+            % Initialize the qualtity flag for this pixel
+            q_flag = q_base;
+            
             % Bin the NO2 data by pressure.
             [no2bins, presbins] = bin_omisp_pressure(pres_array{p}, no2_array{p});
+            % Get the standard error of the bins
+            [~,~,no2stderr] = bin_omisp_pressure(pres_array{p}, no2_array{p}, 'binmode','mean');
+            % Bin the temperature
             [tempbins, temp_presbins] = bin_omisp_pressure(pres_array{p}, temp_array{p});
             
             
@@ -321,17 +405,38 @@ else
             % pptv, assume that the profile has sampled the free troposphere
             % and can be extrapolated to the tropopause safely.  If not, then
             % we will need to use the composite profile to fill in the bins
-            % above the profile top.
+            % above the profile top. At the same time, get the bottom 10
+            % NO2 measurements; we'll need them to extrapolate to the
+            % surface.
             M = sortrows([pres_array{p}', no2_array{p}', radar_array{p}', temp_array{p}']);
             xx = find(~isnan(M(:,2)),10,'last'); zz = find(~isnan(M(:,2)),10,'first');
             bottom_med_no2 = median(M(xx,2)); top_med_no2 = median(M(zz,2));
             bottom_med_temp = nanmedian(M(xx,4)); top_med_temp = nanmedian(M(zz,4));
             bottom_med_radar_alt = nanmedian(M(xx,3)); bottom_med_pres = nanmedian(M(xx,1));
-            bottom_alt = -log(bottom_med_pres/1013)*7.4;
-            surface_alt = bottom_alt-bottom_med_radar_alt; surface_pres = 1013*exp(-surface_alt/7.4);
+            % There is a chance that the radar system wasn't working at the
+            % same time as the NO2 measurments, so if there were no
+            % corresponding radar measurements in the lowest part of the
+            % column, take whatever lowest 10 are available.
+            if isnan(bottom_med_radar_alt);
+                yy = find(~isnan(M(:,3)),10,'last');
+                bottom_med_radar_alt = nanmedian(M(yy,3)); bottom_med_pres = nanmedian(M(yy,1));
+                q_flag = bitset(q_flag,6,1);
+            end
+            % If the radar altitude is now a valid number, use it to get
+            % the surface pressure.  Otherwise, use the GLOBE database and
+            % find the nearest surface altitude, which must be converted to
+            % kilometers
+            if ~isnan(bottom_med_radar_alt)
+                bottom_alt = -log(bottom_med_pres/1013)*7.4;
+                surface_alt = bottom_alt-bottom_med_radar_alt; surface_pres = 1013*exp(-surface_alt/7.4);
+            else
+                if DEBUG_LEVEL > 0; fprintf('  Retrieving GLOBE surface altitude.  May take a second...\n'); end
+                surface_alt = nearest_GLOBE_alt(nanmean(lon_array{p}), nanmean(lat_array{p}))/1000;
+                surface_pres = 1013*exp(-surface_alt/7.4);
+                q_flag = bitset(q_flag,7,1);
+            end
             
-            % Initialize the qualtity flag for this pixel
-            q_flag = q_base;
+            
             
             if sum(~isnan(no2_array{p}))/numel(no2_array{p}) < 0.1
                 q_flag = bitset(q_flag,4,1); % Set the 4th bit as a flag if less than 10% of the data points are non-fill values
@@ -368,10 +473,15 @@ else
             % extrapolate the median lowest 10 NO2 measurements to surface
             % pressure.
             bb = find(~isnan(no2bins),1,'first');
-            if surface_pres < presbins(bb);
-                presbins(bb) = surface_pres;
+            % Restrict the three bins to start from those that have NO2
+            % values
+            no2bins = no2bins(bb:end);
+            presbins = presbins(bb:end);
+            tempbins = tempbins(bb:end);
+            if surface_pres < presbins(1); % if surface is above the bottom bin center...
+                presbins(1) = surface_pres;
                 nans = isnan(tempbins);
-                tempbins(nans) = interp1(log(pres_composite(~nans)), tempbins(~nans), log(pres_composite(nans)),'linear','extrap');
+                tempbins(nans) = interp1(log(pres_composite(~nans)), tempbins(~nans), log(pres_composite(nans)),'linear','extrap'); % Just in case the temperature data doesn't cover all the remaining bins, interpolate it
             else
                 no2nans = isnan(no2bins);
                 no2bins = no2bins(~no2nans); tempbins = tempbins(~no2nans); presbins = presbins(~no2nans);
@@ -434,6 +544,7 @@ else
                     omi_no2_out(P) = omi_no2_p(o);
                     behr_no2_out(P) = behr_no2_p(o);
                     air_no2_out(P) = no2_column;
+                    air_no2_stderr(P) = sqrt(nansum(no2stderr .^ 2)); % Errors add quadratically
                     quality_flags(P) = q_flag;
                     
                     db.latcorn(:,P) = corner_lat_p(:,o);
@@ -452,6 +563,7 @@ else
     omi_no2_out = omi_no2_out(~fills);
     behr_no2_out = behr_no2_out(~fills);
     air_no2_out = air_no2_out(~fills);
+    air_no2_stderr = air_no2_stderr(~fills);
     coverage_fraction = coverage_fraction(~fills);
     quality_flags = quality_flags(~fills);
     

@@ -5,13 +5,15 @@
 %
 %  Josh Laughner <joshlaugh5@gmail.com> 4 Jul 2014
 
-date_start = '07/01/2011';
-date_end = '07/31/2011';
+date_start = '03/04/2006';
+date_end = '05/15/2006';
+
+no2field = 'NO2';
 
 tz = 'est';
 
-merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
+merge_dir = '/Volumes/share/GROUP/INTEX-B/Matlab Files/';
+behr_dir = '/Volumes/share-sat/SAT/BEHR/BEHR_Files_2014/';
 
 DEBUG_LEVEL = 0;
 
@@ -49,15 +51,16 @@ for d=1:numel(dates)
 
     for swath=1:numel(Data)
         S=S+1;
-        [lon_ncar_md{S}, lat_ncar_md{S}, omino2_ncar_md{S}, behrno2_ncar_md{S}, airno2_ncar_md{S}, cov_ncar_md{S}, quality_ncar_md{S}, db(S).db] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',0);
+        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, airno2_stderr_i{S}, cov_i{S}, quality_i{S}, db(S).db] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field);
     end
 end
 
 % concatenate the output
-lon_ncar_mdall = cat(1,lon_ncar_md{:});
-lat_ncar_mdall = cat(1,lat_ncar_md{:});
-omino2_ncar_mdall = cat(1, omino2_ncar_md{:});
-behrno2_ncar_mdall = cat(1, behrno2_ncar_md{:});
-airno2_ncar_mdall = cat(1, airno2_ncar_md{:});
-cov_ncar_mdall = cat(1, cov_ncar_md{:});
-quality_ncar_mdall = cat(1,quality_ncar_md{:});
+lon_iall = cat(1,lon_i{:});
+lat_iall = cat(1,lat_i{:});
+omino2_iall = cat(1, omino2_i{:});
+behrno2_iall = cat(1, behrno2_i{:});
+airno2_iall = cat(1, airno2_i{:});
+airno2_stderr_iall = cat(1, airno2_stderr_i{:});
+cov_iall = cat(1, cov_i{:});
+quality_iall = cat(1,quality_i{:});
