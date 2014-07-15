@@ -1,22 +1,29 @@
 % Run_Spiral_Verification
 %
 %   This script will automatically execute sprial_verification.m for each
-%   swath of each day within the range of dates given.
+%   swath of each day within the range of dates given.  This version of the
+%   script will pass the UTC 
 %
 %  Josh Laughner <joshlaugh5@gmail.com> 4 Jul 2014
 
-date_start = '07/01/2011';
-date_end = '07/31/2011';
+date_start = '03/04/2006';
+date_end = '05/15/2006';
 
-no2field = 'NO2_LIF';
+no2field = 'NO2';
+altfield = 'ALTITUDE_GPS';
+radarfield = 'ALTITUDE_RADAR';
+tempfield = 'TEMP_STAT_C';
+presfield = 'STAT_PRESSURE';
 
-tz = 'est';
+tz = 'auto'; %set to 'auto' to calculate the time zone based on the mean longitude of the flight
 
 merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
 behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
+range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges.mat';
 
-DEBUG_LEVEL = 0;
+DEBUG_LEVEL = 2;
 
+load(range_file); range_dates = {Ranges.Date};
 dates = datenum(date_start):datenum(date_end);
 
 S=0;
@@ -27,7 +34,7 @@ for d=1:numel(dates)
     month = curr_date(6:7);
     day = curr_date(9:10);
     merge_filename = sprintf('*%s_%s_%s.mat',year,month,day);
-    behr_filename = sprintf('OMI_BEHR_*%s%s%s.mat',year,month,day);
+    behr_filename = sprintf('OMI_SP_*%s%s%s.mat',year,month,day);
     
     merge_files = dir(fullfile(merge_dir,merge_filename));
     if numel(merge_files)==1
@@ -48,10 +55,16 @@ for d=1:numel(dates)
     else
         error('run_spiral:tmm','Number of BEHR files for %s is not 1 or 0',datestr(dates(d)));
     end
-
+    
+    % Find the UTC range data for this date
+    xx = find(strcmp(curr_date,range_dates));
+    if isempty(xx);
+        error('run_spiral:ranges','No UTC ranges found for %s',curr_date);
+    end
+    
     for swath=1:numel(Data)
         S=S+1;
-        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, airno2_stderr_i{S}, cov_i{S}, quality_i{S}, db(S).db] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field);
+        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, airno2_stderr_i{S}, cov_i{S}, quality_i{S}, db(S).db] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield);
     end
 end
 

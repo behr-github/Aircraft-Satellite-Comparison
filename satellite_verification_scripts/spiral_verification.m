@@ -171,6 +171,9 @@ no2(no2<0) = NaN; % Must remove any negative values from consideration because t
 radar_alt = remove_merge_fills(Merge,radarfield,'alt',altfield);
 pres = remove_merge_fills(Merge,presfield,'alt',altfield);
 temperature = remove_merge_fills(Merge,Tfield,'alt',altfield);
+altfill = eval(sprintf('Merge.Data.%s.Fill',altfield));
+alt(alt==altfill) = NaN; % Switching to GPS altitude gave fill values for altitude.  These must be removed.
+
 
 % If the timezone was set to "auto," calculate the difference from UTC
 % based on the mean longitude
@@ -408,18 +411,19 @@ else
             % above the profile top. At the same time, get the bottom 10
             % NO2 measurements; we'll need them to extrapolate to the
             % surface.
-            M = sortrows([pres_array{p}', no2_array{p}', radar_array{p}', temp_array{p}']);
+            M = sortrows([pres_array{p}', no2_array{p}', radar_array{p}', temp_array{p}', alt_array{p}']);
             xx = find(~isnan(M(:,2)),10,'last'); zz = find(~isnan(M(:,2)),10,'first');
             bottom_med_no2 = median(M(xx,2)); top_med_no2 = median(M(zz,2));
             bottom_med_temp = nanmedian(M(xx,4)); top_med_temp = nanmedian(M(zz,4));
             bottom_med_radar_alt = nanmedian(M(xx,3)); bottom_med_pres = nanmedian(M(xx,1));
+            bottom_med_GPS_alt = nanmedian(M(xx,5));
             % There is a chance that the radar system wasn't working at the
             % same time as the NO2 measurments, so if there were no
             % corresponding radar measurements in the lowest part of the
             % column, take whatever lowest 10 are available.
             if isnan(bottom_med_radar_alt);
                 yy = find(~isnan(M(:,3)),10,'last');
-                bottom_med_radar_alt = nanmedian(M(yy,3)); bottom_med_pres = nanmedian(M(yy,1));
+                bottom_med_radar_alt = nanmedian(M(yy,3)); bottom_med_GPS_alt = nanmedian(M(yy,5));
                 q_flag = bitset(q_flag,6,1);
             end
             % If the radar altitude is now a valid number, use it to get
@@ -427,16 +431,13 @@ else
             % find the nearest surface altitude, which must be converted to
             % kilometers
             if ~isnan(bottom_med_radar_alt)
-                bottom_alt = -log(bottom_med_pres/1013)*7.4;
-                surface_alt = bottom_alt-bottom_med_radar_alt; surface_pres = 1013*exp(-surface_alt/7.4);
+                surface_alt = bottom_med_GPS_alt-bottom_med_radar_alt; surface_pres = 1013*exp(-surface_alt/7.4);
             else
                 if DEBUG_LEVEL > 0; fprintf('  Retrieving GLOBE surface altitude.  May take a second...\n'); end
                 surface_alt = nearest_GLOBE_alt(nanmean(lon_array{p}), nanmean(lat_array{p}))/1000;
                 surface_pres = 1013*exp(-surface_alt/7.4);
                 q_flag = bitset(q_flag,7,1);
             end
-            
-            
             
             if sum(~isnan(no2_array{p}))/numel(no2_array{p}) < 0.1
                 q_flag = bitset(q_flag,4,1); % Set the 4th bit as a flag if less than 10% of the data points are non-fill values
@@ -478,7 +479,9 @@ else
             no2bins = no2bins(bb:end);
             presbins = presbins(bb:end);
             tempbins = tempbins(bb:end);
-            if surface_pres < presbins(1); % if surface is above the bottom bin center...
+            if surface_pres < presbins(2);
+                error('spiral_ver:surface_pressure','Surface pressure is above the second valid bin, seems unphysical');
+            elseif surface_pres < presbins(1); % if surface is above the bottom bin center...
                 presbins(1) = surface_pres;
                 nans = isnan(tempbins);
                 tempbins(nans) = interp1(log(pres_composite(~nans)), tempbins(~nans), log(pres_composite(nans)),'linear','extrap'); % Just in case the temperature data doesn't cover all the remaining bins, interpolate it
