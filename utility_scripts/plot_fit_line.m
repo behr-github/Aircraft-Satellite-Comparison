@@ -35,7 +35,7 @@ if strcmpi(regression,'lineary');
     [P, R] = polyfit_R2(x,y,1);
 elseif strcmpi(regression,'majoraxis');
     [P(1), P(2), R] = lsqfitma(x,y);
-    R = R^2; % This function does not square R before returning.
+    R = R^2; % lsqfitma does not square R before returning.
 end
 line(0:1e16:1e17,polyval(P,0:1e16:1e17),'color','k','linestyle','--','linewidth',2);
 legendcell = {'All points',sprintf('Fit: %.4fx + %.2g \nR^2 = %.4f',P(1),P(2),R)};

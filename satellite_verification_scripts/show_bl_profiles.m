@@ -5,12 +5,12 @@
 %
 %   Josh Laughner <joshlaugh5@gmail.com> 2 Jul 2014
 
-date = '624'; %month and day (mdd) with no separators
-choice_ind = 8;
-range_ind = 4;
+date = '622'; %month and day (mdd) with no separators
+choice_ind = 6;
+range_ind = 3;
 
 load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/Scratch/ARCTAS Verification -  AMF using OMI cldfrac.mat');
-load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/Scratch/BLH_choices modified 2.mat');
+load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/Scratch/BLH_choices modified 3.mat');
 load('/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/ARCTAS-CA Altitude Ranges Exclusive 2.mat');
 Merge = eval(sprintf('Merge%s',date));
 
