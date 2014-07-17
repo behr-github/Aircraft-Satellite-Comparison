@@ -2,9 +2,19 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, air
 %[lon, lat, omi, behr, air, cov_frac] = spiral_verification(Merge,Data,timezone) Compare OMI pixel NO2 values to aircraft spirals.
 %
 %   This function is based off of the method described in Hains et. al. (J.
-%   Geophys. Res. 2010, 115, D05301 doi 10.1029/2009JD012399) to compare
-%   OMI NO2 columns to aircraft measurements using full spiral profiles as
-%   the means to integrate NO2 concentrations.
+%   Geophys. Res. 2010, 115, D05301 doi 10.1029/2009JD012399) and Bucesela
+%   et. al. (J. Geophys. Res. 2008, 113, D16S31 doi:10.1029/2007/D008838)
+%   to compare OMI NO2 columns to aircraft measurements using full spiral
+%   profiles as the means to integrate NO2 concentrations.  The profile
+%   data is binned by pressure bins as in the Bucsela article.
+%   Extrapolation above and below the spiral is usually handled as in Hains
+%   et. al.; the median lowest/highest 10 NO2 measurements are extrapolated
+%   as a constant.  As in Hains, the surface altitude is determined as the
+%   difference between the median of the lowest 10 GPS altitudes and radar
+%   altitudes. (Pressure altitude was not used because of potential
+%   variability with local conditions).  Unlike Hains, the tropopause
+%   pressure was not fixed, but taken from the OMI pixel being validated
+%   against.
 %
 %   This requires 3 inputs: Merge - a data structure (produced by
 %   read_merge_data.m) that contains all the data for one day of flight
