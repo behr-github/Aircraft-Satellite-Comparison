@@ -5,10 +5,10 @@
 %
 %  Josh Laughner <joshlaugh5@gmail.com> 4 Jul 2014
 
-date_start = '01/15/2013';
-date_end = '02/06/2013';
+date_start = '07/01/2011';
+date_end = '07/31/2011';
 
-no2field = 'NO2_MixingRatio';
+no2field = 'NO2_LIF';
 
 tz = 'est';
 
@@ -19,7 +19,7 @@ DEBUG_LEVEL = 0;
 
 dates = datenum(date_start):datenum(date_end);
 
-S=0;
+S=0; clear db
 for d=1:numel(dates)
     % Load the merge and BEHR files
     curr_date = datestr(dates(d),29);
@@ -49,9 +49,10 @@ for d=1:numel(dates)
         error('run_spiral:tmm','Number of BEHR files for %s is not 1 or 0',datestr(dates(d)));
     end
 
+    
     for swath=1:numel(Data)
         S=S+1;
-        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, airno2_stderr_i{S}, cov_i{S}, quality_i{S}, db(S).db] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field);
+        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, airno2_stderr_i{S}, cov_i{S}, quality_i{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field);
         date_cell{S} = repmat({curr_date},numel(lon_i{S}),1);
     end
 end

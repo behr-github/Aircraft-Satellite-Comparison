@@ -212,6 +212,7 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     db.latcorn = NaN(4,1);
     db.loncorn = NaN(4,1);
     db.strat_NO2 = NaN;
+    db.modis_cloud = NaN;
 else
     if percent_nans > 0.9;
         warning('Merge file for %s has %.0f%% NO2 values as NaNs',datestr(merge_datenum,2),percent_nans*100);
@@ -239,6 +240,7 @@ else
         db.latcorn = NaN(4,1);
         db.loncorn = NaN(4,1);
         db.strat_NO2 = NaN;
+        db.modis_cloud = NaN;
         return 
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
@@ -358,6 +360,17 @@ else
             rethrow(err)
         end
     end
+    try
+        modis_cloud = Data2.MODISCloud(xx);
+    catch err
+        if strcmp(err.identifier,'MATLAB:nonExistentField')
+            if DEBUG_LEVEL > 0; fprintf('    No BEHR data for this swath\n'); end
+            q_base = bitset(q_base,9,1);
+            modis_cloud = -127*ones(size(xx));
+        else
+            rethrow(err)
+        end
+    end
     % Extra fields carried through for curiosity 
     total_omi_no2 = Data2.ColumnAmountNO2;
     
@@ -381,6 +394,7 @@ else
     db.loncorn = -9e9*ones(4,n*4);
     db.latcorn = -9e9*ones(4,n*4);
     db.strat_NO2 = -9e9*ones(n*4,1);
+    db.modis_cloud = -9e9*ones(n*4,1);
     
     % Also, define Avogadro's number and gas constant;
     Av = 6.022e23; % molec. / mol
@@ -509,7 +523,7 @@ else
             corner_lat_p = corner_lat(:,latlon_logical); corner_lon_p = corner_lon(:,latlon_logical);
             behr_no2_p = behr_no2(latlon_logical); omi_no2_p = omi_no2(latlon_logical);
             TropopausePres_p = TropopausePres(latlon_logical); vza_p = vza(latlon_logical);
-            total_omi_no2_p = total_omi_no2(latlon_logical);
+            total_omi_no2_p = total_omi_no2(latlon_logical); modis_cloud_p = modis_cloud(latlon_logical);
             
             for o=1:numel(behr_no2_p);
                 no2_3km = no2_array{p}(alt_array{p}<3);
@@ -559,6 +573,7 @@ else
                     db.latcorn(:,P) = corner_lat_p(:,o);
                     db.loncorn(:,P) = corner_lon_p(:,o);
                     db.strat_NO2(P) = total_omi_no2_p(o) - omi_no2_p(o);
+                    db.modis_cloud(P) = modis_cloud_p(o);
                     
                     IN_all = inpolygon(lon_array{p}, lat_array{p}, corner_lon_p(:,o), corner_lat_p(:,o));
                     coverage_fraction(P) = sum(IN_all)/numel(no2_array{p});
@@ -580,6 +595,7 @@ else
     db.latcorn = db.latcorn(:,~fills);
     db.loncorn = db.loncorn(:,~fills);
     db.strat_NO2 = db.strat_NO2(~fills);
+    db.modis_cloud = db.modis_cloud(~fills);
 end
 end
 
