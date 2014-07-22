@@ -382,7 +382,7 @@ else
         end
     end
     % Extra fields carried through for curiosity 
-    total_omi_no2 = Data2.ColumnAmountNO2;
+    total_omi_no2 = Data2.ColumnAmountNO2(xx);
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %%%%%     MATCH PIXELS AND SPIRALS     %%%%%

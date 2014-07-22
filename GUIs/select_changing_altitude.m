@@ -23,7 +23,7 @@ function varargout = select_changing_altitude(varargin)
 
 % Edit the above text to modify the response to help select_changing_altitude
 
-% Last Modified by GUIDE v2.5 14-Jul-2014 09:51:01
+% Last Modified by GUIDE v2.5 17-Jul-2014 10:41:21
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -59,7 +59,8 @@ handles.output = hObject;
 % If a Merge file is passed to the wrapping function, open the gui with
 % that file loaded.
 if numel(varargin)>0;
-handles = load_merge(handles,varargin{1});
+    if ~ischar(varargin{1}); error('alt_GUI:inputMerge','Input a filename only/'); end
+    handles = load_merge(handles,varargin{1});
 end
 
 % Turn off the buttons not needed until a range is created
@@ -336,6 +337,24 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 set(hObject,'String','ALTP');
 
+% --- Executes on button press in autosel_button.
+function autosel_button_Callback(hObject, eventdata, handles)
+% hObject    handle to autosel_button (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% If there are user defined ranges, let the user know that they will be
+% cleared by auto selection of ranges.
+if ~isempty(handles.ranges)
+    answer = questdlg('Auto selection will clear existing ranges. Continue?','Clear ranges','OK','Cancel','Cancel');
+else
+    answer = 'OK';
+end
+if strcmp(answer,'OK')
+    handles = autoselect_ranges(handles);
+end
+guidata(hObject,handles);
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%          Additional functions         %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -383,7 +402,7 @@ S.ranges = [];
 
 function S = load_merge(S, filename)
 load(filename,'Merge');
-[fieldname,ok] = select_alt_field(Merge);
+[fieldname,ok] = select_field(Merge,'ALTP','Select the altitude field');
 if ok
     S.file = filename;
     utc = Merge.Data.UTC.Values;
@@ -401,12 +420,34 @@ else
     set(S.feedback_text,'String','Canceled loading merge file.');
 end
 
-function [fieldname, ok] = select_alt_field(Merge)
+function [fieldname, ok] = select_field(Merge,default_field,promptstring)
 all_fields = fieldnames(Merge.Data);
-if isfield(Merge.Data,'ALTP')
-    xx = find(strcmp('ALTP',all_fields));
+if isfield(Merge.Data,default_field)
+    xx = find(strcmp(default_field,all_fields));
 else
     xx = 1;
 end
-[fieldindex,ok] = listdlg('ListString',all_fields,'SelectionMode','single','PromptString','Select the altitude field','InitialValue',xx);
+[fieldindex,ok] = listdlg('ListString',all_fields,'SelectionMode','single','PromptString',promptstring,'InitialValue',xx);
 fieldname = all_fields{fieldindex};
+
+function S = autoselect_ranges(S)
+    S = clearRanges(S);
+    load(S.file,'Merge');
+    [fieldname,ok] = select_field(Merge,'profnum','Select a field defining vertical profiles'); % Have the user pick the profile number field
+    if ok
+        profnums = eval(sprintf('Merge.Data.%s.Values',fieldname));
+        utc_times = Merge.Data.UTC.Values;
+        unique_profnums = unique(profnums(profnums>0));
+        % For each profile number find its beginning and end time and
+        % create a range for it
+        n_profnums = numel(unique_profnums);
+        ranges = zeros(n_profnums,2);
+        for a=1:n_profnums
+            xx(1) = find(profnums==unique_profnums(a),1,'first');
+            xx(2) = find(profnums==unique_profnums(a),1,'last');
+            ranges(a,:) = utc_times(xx);
+        end
+        S.ranges = ranges;
+        S = redraw_ranges(S,mean(ranges(end,:)));
+        S.range_index = size(S.ranges,1);
+    end

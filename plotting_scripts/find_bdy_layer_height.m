@@ -49,6 +49,22 @@ if ~isempty(regexpi(find_type,'theta'))
         end
     end
     
+% A special method for potential temperature intended for use when a user
+% has manually identified a range in which the d(theta)/dz > 0 transition
+% occurs
+elseif strcmpi(find_type,'thetalite'); 
+    delta = diff(vals)./(diff(altitude));
+    xx = find(delta > 1);
+    bl_height = -1;
+    for a=1:numel(xx)
+        ind_low = xx(a)+1;
+        ind_high = min(xx(a)+4,numel(delta));
+        if all(delta(ind_low:ind_high) > 0);
+            bl_height = altitude(xx(a));
+            break
+        end
+    end
+    
 elseif any(strcmpi(find_type,{'exp','expo','exponential'}));
     % Sort and average same x values so that altitude is a monotonically increasing vector
     [altitude, vals] = average_same_x(altitude, vals);
