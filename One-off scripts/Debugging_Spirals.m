@@ -24,7 +24,7 @@ behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
 
 behr_map_file = '/Users/Josh/Documents/MATLAB/Figures/Sat Verification/Debugging Spiral Method/BEHR Columns July 2011.mat';
 
-DEBUG_LEVEL = 1;
+DEBUG_LEVEL = 0;
 
 dates = datenum(date_start):datenum(date_end);
 
@@ -62,11 +62,10 @@ for d=1:numel(dates)
     end
     
     S=0;
-    lon = cell(1,4); lat = cell(1,4); omino2 = cell(1,4); behrno2 = cell(1,4); airno2 = cell(1,4);
-    airno2err = cell(1,4); cov = cell(1,4); quality = cell(1,4); db = struct;
+    lon = cell(1,4); lat = cell(1,4); omino2 = cell(1,4); behrno2 = cell(1,4); airno2 = cell(1,4); clear('db');
     for swath=1:numel(Data)
         S=S+1;
-        [lon{S}, lat{S}, omino2{S}, behrno2{S}, airno2{S}, airno2err{S}, cov{S}, quality{S}, db(S).db] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',DEBUG_LEVEL,'no2field',no2field);
+        [lon{S}, lat{S}, omino2{S}, behrno2{S}, airno2{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',DEBUG_LEVEL,'no2field',no2field);
     end
     
     lonall = cat(1,lon{:}); latall = cat(1,lat{:});
@@ -82,10 +81,10 @@ for d=1:numel(dates)
             m_grid('linestyle','none');
             
             for a=1:numel(db)
-                s = size(db(a).db.loncorn);
+                s = size(db(a).loncorn);
                 if s(2) > 0;
                     for b=1:s(2)
-                        m_line([db(a).db.loncorn(:,b); db(a).db.loncorn(1,b)], [db(a).db.latcorn(:,b); db(a).db.latcorn(1,b)],'color','k','linewidth',2)
+                        m_line([db(a).loncorn(:,b); db(a).loncorn(1,b)], [db(a).latcorn(:,b); db(a).latcorn(1,b)],'color','k','linewidth',2)
                     end
                 end
             end
@@ -100,10 +99,10 @@ for d=1:numel(dates)
             fcent = state_outlines(states{:});
             delta = cat(1,behrno2{:}) - cat(1,airno2{:});
             for a=1:numel(db)
-                s = size(db(a).db.loncorn);
+                s = size(db(a).loncorn);
                 if s(2) > 0;
                     for b=1:s(2)
-                        line([db(a).db.loncorn(:,b); db(a).db.loncorn(1,b)], [db(a).db.latcorn(:,b); db(a).db.latcorn(1,b)],'color','b','linewidth',2)
+                        line([db(a).loncorn(:,b); db(a).loncorn(1,b)], [db(a).latcorn(:,b); db(a).latcorn(1,b)],'color','b','linewidth',2)
                     end
                 end
             end
@@ -138,11 +137,11 @@ for d=1:numel(dates)
             fstrat = state_outlines(states{:});
             SNO2 = [];
             for a=1:numel(db)
-                s = size(db(a).db.loncorn);
+                s = size(db(a).loncorn);
                 if s(2) > 0;
                     SNO2 = cat(1,SNO2,db(a).db.strat_NO2);
                     for b=1:s(2)
-                        line([db(a).db.loncorn(:,b); db(a).db.loncorn(1,b)], [db(a).db.latcorn(:,b); db(a).db.latcorn(1,b)],'color','b','linewidth',2)
+                        line([db(a).loncorn(:,b); db(a).loncorn(1,b)], [db(a).latcorn(:,b); db(a).latcorn(1,b)],'color','b','linewidth',2)
                     end
                 end
             end

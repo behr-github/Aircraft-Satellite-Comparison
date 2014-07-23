@@ -26,7 +26,7 @@ DEBUG_LEVEL = 2;
 load(range_file); range_dates = {Ranges.Date};
 dates = datenum(date_start):datenum(date_end);
 
-S=0;
+S=0; clear('db');
 for d=1:numel(dates)
     % Load the merge and BEHR files
     curr_date = datestr(dates(d),29);
@@ -64,7 +64,7 @@ for d=1:numel(dates)
     
     for swath=1:numel(Data)
         S=S+1;
-        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, airno2_stderr_i{S}, cov_i{S}, quality_i{S}, db(S).db] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield);
+        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield);
     end
 end
 
@@ -74,6 +74,3 @@ lat_iall = cat(1,lat_i{:});
 omino2_iall = cat(1, omino2_i{:});
 behrno2_iall = cat(1, behrno2_i{:});
 airno2_iall = cat(1, airno2_i{:});
-airno2_stderr_iall = cat(1, airno2_stderr_i{:});
-cov_iall = cat(1, cov_i{:});
-quality_iall = cat(1,quality_i{:});

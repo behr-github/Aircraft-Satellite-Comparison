@@ -54,11 +54,10 @@ for d=1:numel(dates)
     end
     
     S=0;
-    lon = cell(1,4); lat = cell(1,4); omino2 = cell(1,4); behrno2 = cell(1,4); airno2 = cell(1,4);
-    airno2err = cell(1,4); cov = cell(1,4); quality = cell(1,4); db = struct;
+    lon = cell(1,4); lat = cell(1,4); omino2 = cell(1,4); behrno2 = cell(1,4); airno2 = cell(1,4); clear('db');
     for swath=1:numel(Data)
         S=S+1;
-        [lon{S}, lat{S}, omino2{S}, behrno2{S}, airno2{S}, airno2err{S}, cov{S}, quality{S}, db(S).db] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',DEBUG_LEVEL,'no2field',no2field);
+        [lon{S}, lat{S}, omino2{S}, behrno2{S}, airno2{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',DEBUG_LEVEL,'no2field',no2field);
     end
     
     D=D+1;
@@ -77,7 +76,7 @@ for d=1:numel(dates)
         case 'stratno2'
             mydata{1} = [];
             for a=1:numel(db);
-                mydata{1} = [mydata{1}; db(a).db.strat_NO2];
+                mydata{1} = [mydata{1}; db(a).strat_NO2];
             end
             mydata{2} = D*ones(size(mydata{1}));
             
