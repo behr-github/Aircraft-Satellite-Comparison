@@ -525,9 +525,16 @@ else
             
             % Remove pixels not overlapping this profile
             if DEBUG_LEVEL > 0; fprintf('   Removing pixels outside profile track\n'); end
-            lon_logical = corner_lon > min(lon_array{p}) & corner_lon < max(lon_array{p});
-            lat_logical = corner_lat > min(lat_array{p}) & corner_lat < max(lat_array{p});
-            latlon_logical = any(lon_logical) & any(lat_logical);
+            %all(lon_array{p} < min(loncorn_p)) || all(lon_array{p} > max(loncorn_p)) || all(lat_array{p} < min(latcorn_p)) || all(lat_array{p} > max(latcorn_p))
+            %lon_logical = corner_lon > min(lon_array{p}) & corner_lon < max(lon_array{p});
+            %lat_logical = corner_lat > min(lat_array{p}) & corner_lat < max(lat_array{p});
+            %latlon_logical = any(lon_logical) & any(lat_logical);
+            latlon_logical = false(1,size(corner_lon,2));
+            for l=1:size(corner_lon,2)
+                loncorn_p = corner_lon(:,l); latcorn_p = corner_lat(:,l);
+                bool = all(lon_array{p} < min(loncorn_p)) || all(lon_array{p} > max(loncorn_p)) || all(lat_array{p} < min(latcorn_p)) || all(lat_array{p} > max(latcorn_p));
+                latlon_logical(l) = ~bool;
+            end
             
             omi_lat_p = omi_lat(latlon_logical); omi_lon_p = omi_lon(latlon_logical);
             corner_lat_p = corner_lat(:,latlon_logical); corner_lon_p = corner_lon(:,latlon_logical);

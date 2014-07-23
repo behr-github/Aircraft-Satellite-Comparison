@@ -16,7 +16,7 @@ states={'md'};
 % Which plots to show
 avgNO2 = true;
 deltaNO2 = true;
-dailySatNO2 = true;
+dailySatNO2 = false;
 stratNO2 = false;
 
 merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
