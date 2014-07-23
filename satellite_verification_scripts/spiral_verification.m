@@ -1,4 +1,4 @@
-function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, air_no2_stderr, coverage_fraction, quality_flags, db ] = spiral_verification( Merge, Data, timezone, varargin )
+function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, db ] = spiral_verification( Merge, Data, timezone, varargin )
 %[lon, lat, omi, behr, air, cov_frac] = spiral_verification(Merge,Data,timezone) Compare OMI pixel NO2 values to aircraft spirals.
 %
 %   This function is based off of the method described in Hains et. al. (J.
@@ -48,7 +48,7 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, air
 %           overpass
 %       9th: No BEHR data for this swath (probably used an OMI_SP only
 %           file)
-%       10-15: Unused 
+%       10-15: Unused
 %       16th: Set if the column was skipped due to < 1% valid
 %           NO2, pressure, or temperature data
 %
@@ -66,7 +66,7 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, air
 %   parameter to override that.
 %
 %   altfield: Defaults to ALTP, which is the correct field for pressure
-%   altitude for DISCOVER campaigns.  
+%   altitude for DISCOVER campaigns.
 %
 %   radarfield: Defaults to the correct radar altitude field name for a
 %   DISCOVER campaign based on the date of the merge file.  Use this field
@@ -199,8 +199,8 @@ percent_nans = sum(isnan(no2))/numel(no2);
 percent_nans_P = sum(isnan(pres))/numel(pres);
 percent_nans_T = sum(isnan(temperature))/numel(temperature);
 if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
-    if DEBUG_LEVEL > 1 && percent_nans > 0.99; 
-        fprintf('%s had < 1%% of NO2 values valid\n',datestr(merge_datenum,2)); 
+    if DEBUG_LEVEL > 1 && percent_nans > 0.99;
+        fprintf('%s had < 1%% of NO2 values valid\n',datestr(merge_datenum,2));
     end
     if DEBUG_LEVEL > 1 && percent_nans_P > 0.99;
         fprintf('%s had < 1%% of pressure values valid\n',datestr(merge_datenum,2));
@@ -215,10 +215,10 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     omi_no2_out = NaN;
     behr_no2_out = NaN;
     air_no2_out = NaN;
-    air_no2_stderr = NaN;
-    coverage_fraction = NaN;
-    quality_flags = uint16(2^15+1);
     
+    db.all_profiles = NaN;
+    db.coverage_fraction = NaN;
+    db.quality_flags = uint16(2^15+1);
     db.latcorn = NaN(4,1);
     db.loncorn = NaN(4,1);
     db.strat_NO2 = NaN;
@@ -243,15 +243,15 @@ else
         omi_no2_out = NaN;
         behr_no2_out = NaN;
         air_no2_out = NaN;
-        air_no2_stderr = NaN;
-        coverage_fraction = NaN;
-        q_base = bitset(q_base,1,1); quality_flags = bitset(q_base,8,1);
         
+        db.all_profiles = NaN;
+        db.coverage_fraction = NaN;
+        q_base = bitset(q_base,1,1); db.quality_flags = bitset(q_base,8,1);
         db.latcorn = NaN(4,1);
         db.loncorn = NaN(4,1);
         db.strat_NO2 = NaN;
         db.modis_cloud = NaN;
-        return 
+        return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
     temp_composite = bin_omisp_pressure(pres(tt),temperature(tt));
@@ -345,7 +345,7 @@ else
     if DEBUG_LEVEL > 0; fprintf('   Rejecting with omi_pixel_reject.m\n'); end
     try % Handles the case of both BEHR files and SP-only files
         Data2 = omi_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
-    catch err; 
+    catch err;
         if strcmp(err.identifier,'MATLAB:nonExistentField');
             Data2 = omi_sp_pixel_reject(Data,cloud_frac_max,rowanomaly);
         else
@@ -359,9 +359,11 @@ else
     omi_no2 = Data2.ColumnAmountNO2Trop(xx);
     TropopausePres = Data2.TropopausePressure(xx);
     vza = Data2.ViewingZenithAngle(xx);
+    % Try to load the BEHR column, if it is a field in the Data structure
     try
         behr_no2 = Data2.BEHRColumnAmountNO2Trop(xx);
     catch err
+        % If not, fill the imported variable with fill values
         if strcmp(err.identifier,'MATLAB:nonExistentField')
             if DEBUG_LEVEL > 0; fprintf('    No BEHR data for this swath\n'); end
             q_base = bitset(q_base,9,1);
@@ -370,9 +372,14 @@ else
             rethrow(err)
         end
     end
+    % Try to load the MODIS cloud fraction - not needed within this script,
+    % but included in the output structure "db" to examine if cloud
+    % fraction has an impact on the retrieval
     try
         modis_cloud = Data2.MODISCloud(xx);
     catch err
+        % If "MODISCloud" is not a field, fill with import variable with
+        % fill values.
         if strcmp(err.identifier,'MATLAB:nonExistentField')
             if DEBUG_LEVEL > 0; fprintf('    No BEHR data for this swath\n'); end
             q_base = bitset(q_base,9,1);
@@ -381,30 +388,30 @@ else
             rethrow(err)
         end
     end
-    % Extra fields carried through for curiosity 
+    % Extra fields carried through for curiosity; this is used to calculate
+    % stratospheric NO2
     total_omi_no2 = Data2.ColumnAmountNO2(xx);
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %%%%%     MATCH PIXELS AND SPIRALS     %%%%%
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % Initialize matrices to hold the values for each pixel measured.  We will
-    % over estimate the number of pixels that can be compared, assuming a
-    % maximum of 4 per spiral.  This prevents MATLAB from needing to rewrite
-    % the variable to different memory as it grows.
-    n = numel(no2_array); P = 0; % P will keep track of which index to put the next entry into
-    omi_lon_out = -9e9*ones(n*4,1);
-    omi_lat_out = -9e9*ones(n*4,1);
-    omi_no2_out = -9e9*ones(n*4,1);
-    behr_no2_out = -9e9*ones(n*4,1);
-    air_no2_out = -9e9*ones(n*4,1);
-    air_no2_stderr = -9e9*ones(n*4,1);
-    coverage_fraction = -9e9*ones(n*4,1);
-    quality_flags = uint16(zeros(n*4,1));
+    % Initialize matrices to hold the values for each pixel measured.  
+    n = numel(no2_array);
+    npix = numel(omi_lat);
     
-    db.loncorn = -9e9*ones(4,n*4);
-    db.latcorn = -9e9*ones(4,n*4);
-    db.strat_NO2 = -9e9*ones(n*4,1);
-    db.modis_cloud = -9e9*ones(n*4,1);
+    omi_lon_out = -9e9*ones(npix,1);
+    omi_lat_out = -9e9*ones(npix,1);
+    omi_no2_out = -9e9*ones(npix,1);
+    behr_no2_out = -9e9*ones(npix,1);
+    air_no2_out = -9e9*ones(npix,1);
+    
+    db.all_profiles = cell(npix,1);
+    db.coverage_fraction = cell(npix,1);
+    db.quality_flags = cell(npix,1);
+    db.loncorn = -9e9*ones(4,npix);
+    db.latcorn = -9e9*ones(4,npix);
+    db.strat_NO2 = -9e9*ones(npix,1);
+    db.modis_cloud = -9e9*ones(npix,1);
     
     % Also, define Avogadro's number and gas constant;
     Av = 6.022e23; % molec. / mol
@@ -416,14 +423,50 @@ else
     % described in her paper), we will require that there be 20 measurements
     % below 3 km for that pixel, and that the pixel's VZA be less than 60
     % degrees.
-    for p=1:n
-        if min(radar_array{p}) > 0.5
-            continue % As per Hains et. al., the bottom of the profile must reach down to at least 500 m above the surface
-        elseif all(isnan(no2_array{p}));
-            continue % If the entire profile was fill values (i.e. instrument trouble) obviously we have to skip this profile.
-        else
-            % Initialize the qualtity flag for this pixel
-            q_flag = q_base;
+    rej = 0;
+    for pix=1:numel(omi_lat)
+        omi_lon_p = omi_lon(pix); omi_lat_p = omi_lat(pix);
+        loncorn_p = corner_lon(:,pix); latcorn_p = corner_lat(:,pix);
+        omi_no2_p = omi_no2(pix); behr_no2_p = behr_no2(pix);
+        tropopause_p = TropopausePres(pix); vza_p = vza(pix);
+        modis_cloud_p = modis_cloud(pix); total_omi_no2_p = total_omi_no2(pix);
+        % Check the vza
+        if vza_p > 60; continue; end
+        
+        % Initialize matrices to hold values that will be returned per
+        % profile
+        pix_aircraft_no2 = []; pix_coverage = []; pix_flags = [];
+        pix_q_flag = q_base;
+        % Check if any profiles have any part within this pixel, if so,
+        % integrate that profile and average the column value to the pixel
+        for p=1:n
+            % If the profile does not go below 500 m, skip it anyway (per
+            % Hains, require for good BL sampling)
+            if min(radar_array{p}) > 0.5
+                continue
+                % If the entire profile was fill values (i.e. instrument trouble) obviously we have to skip this profile.
+            elseif all(isnan(no2_array{p}));
+                continue
+                % Now check whether the profile is inside the pixel using
+                % logical operations, which are much faster than inpolygon().
+            elseif all(lon_array{p} < min(loncorn_p)) || all(lon_array{p} > max(loncorn_p)) || all(lat_array{p} < min(latcorn_p)) || all(lat_array{p} > max(latcorn_p))
+                continue
+            end
+            
+            % Finally actually check if the profile falls in the pixel
+            % using inpolygon(). Recall that we require there to be 20
+            % valid measurements in the lowest 3 km.
+            no2_3km = no2_array{p}(alt_array{p}<3);
+            lon_3km = lon_array{p}(alt_array{p}<3);
+            lat_3km = lat_array{p}(alt_array{p}<3);
+            IN_3km = inpolygon(lon_3km, lat_3km, loncorn_p, latcorn_p);
+            if sum(~isnan(no2_3km(IN_3km)))<20
+                rej = rej+1;
+                continue % Pixel must have 20 valid measurments between 0-3 km altitude (good sampling of boundary layer)
+            end
+            
+            % Initialize the qualtity flag for this profile
+            q_flag = pix_q_flag;
             
             % Bin the NO2 data by pressure.
             [no2bins, presbins] = bin_omisp_pressure(pres_array{p}, no2_array{p});
@@ -522,75 +565,57 @@ else
                 presbins = [surface_pres, presbins];
             end
             
+            % Insert the OMI tropopause pressure as the final pressure
+            % bin center, then convert all pressure bins to altitude,
+            % interpolate, and integrate.
+            presbins(end) = tropopause_p;
+            altbins = -log(presbins ./ 1013) * 7.4;
             
-            % Remove pixels not overlapping this profile
-            if DEBUG_LEVEL > 0; fprintf('   Removing pixels outside profile track\n'); end
-            lon_logical = corner_lon > min(lon_array{p}) & corner_lon < max(lon_array{p});
-            lat_logical = corner_lat > min(lat_array{p}) & corner_lat < max(lat_array{p});
-            latlon_logical = any(lon_logical) & any(lat_logical);
+            % Interpolate the NO2, temperature, and pressure data
+            dz = 1; % integration segments in meters
+            alt_profile = altbins(1):(dz/1000):altbins(end);
+            no2_profile = interp1(altbins,no2bins,alt_profile,'linear');
+            temp_profile = interp1(altbins,tempbins,alt_profile,'linear');
+            pres_profile = exp(interp1(altbins,log(presbins),alt_profile,'linear')); % Linearly interpolate ln(P) since that is what depends linearly on altitude
             
-            omi_lat_p = omi_lat(latlon_logical); omi_lon_p = omi_lon(latlon_logical);
-            corner_lat_p = corner_lat(:,latlon_logical); corner_lon_p = corner_lon(:,latlon_logical);
-            behr_no2_p = behr_no2(latlon_logical); omi_no2_p = omi_no2(latlon_logical);
-            TropopausePres_p = TropopausePres(latlon_logical); vza_p = vza(latlon_logical);
-            total_omi_no2_p = total_omi_no2(latlon_logical); modis_cloud_p = modis_cloud(latlon_logical);
-            
-            for o=1:numel(behr_no2_p);
-                no2_3km = no2_array{p}(alt_array{p}<3);
-                lon_3km = lon_array{p}(alt_array{p}<3);
-                lat_3km = lat_array{p}(alt_array{p}<3);
-                IN_3km = inpolygon(lon_3km, lat_3km, corner_lon_p(:,o), corner_lat_p(:,o));
-                if sum(~isnan(no2_3km(IN_3km)))<20
-                    continue % Pixel must have 20 valid measurments between 0-3 km altitude (good sampling of boundary layer)
-                elseif vza_p(o) > 60
-                    continue % Pixel viewing zenith angle must not be greater than 60 degress - pixels on the edge of the track are very wide and the spiral is less likely to be representative.
-                else
-                    P = P+1;
-                    % Insert the OMI tropopause pressure as the final pressure
-                    % bin center, then convert all pressure bins to altitude,
-                    % interpolate, and integrate.
-                    presbins(end) = TropopausePres_p(o);
-                    altbins = -log(presbins ./ 1013) * 7.4;
-                    
-                    % Interpolate the NO2, temperature, and pressure data
-                    dz = 1; % integration segments in meters
-                    alt_profile = altbins(1):(dz/1000):altbins(end);
-                    no2_profile = interp1(altbins,no2bins,alt_profile,'linear');
-                    temp_profile = interp1(altbins,tempbins,alt_profile,'linear');
-                    pres_profile = exp(interp1(altbins,log(presbins),alt_profile,'linear')); % Linearly interpolate ln(P) since that is what depends linearly on altitude
-                    
-                    % Carry out the numerical integration
-                    no2_column = 0;
-                    for z=1:numel(alt_profile)
-                        P_z = pres_profile(z); T = temp_profile(z); no2_z = no2_profile(z);
-                        conc_NO2 = (Av * P_z * no2_z * 1e-12)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv
-                        no2_column = no2_column + conc_NO2 * dz * 100; % Integrating in 100dz cm increments
-                    end
-                    
-                    % If any bits in the quality flag are set, set the summary
-                    % bit
-                    if any(q_flag); q_flag = bitset(q_flag,1,1); end
-                    
-                    % Save the results for this pixel
-                    omi_lon_out(P) = omi_lon_p(o);
-                    omi_lat_out(P) = omi_lat_p(o);
-                    omi_no2_out(P) = omi_no2_p(o);
-                    behr_no2_out(P) = behr_no2_p(o);
-                    air_no2_out(P) = no2_column;
-                    air_no2_stderr(P) = sqrt(nansum(no2stderr .^ 2)); % Errors add quadratically
-                    quality_flags(P) = q_flag;
-                    
-                    db.latcorn(:,P) = corner_lat_p(:,o);
-                    db.loncorn(:,P) = corner_lon_p(:,o);
-                    db.strat_NO2(P) = total_omi_no2_p(o) - omi_no2_p(o);
-                    db.modis_cloud(P) = modis_cloud_p(o);
-                    
-                    IN_all = inpolygon(lon_array{p}, lat_array{p}, corner_lon_p(:,o), corner_lat_p(:,o));
-                    coverage_fraction(P) = sum(IN_all)/numel(no2_array{p});
-                end
+            % Carry out the numerical integration
+            no2_column = 0;
+            for z=1:numel(alt_profile)
+                P_z = pres_profile(z); T = temp_profile(z); no2_z = no2_profile(z);
+                conc_NO2 = (Av * P_z * no2_z * 1e-12)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv
+                no2_column = no2_column + conc_NO2 * dz * 100; % Integrating in 100dz cm increments
             end
-        end
-    end
+            pix_aircraft_no2(end+1) = no2_column;
+            
+            % If any bits in the quality flag are set, set the summary
+            % bit; then append the quality flag to all those for this pixel
+            if any(q_flag); q_flag = bitset(q_flag,1,1); end
+            pix_flags(end+1) = q_flag;
+            
+            % Calculate what percentage of the profile actually falls in
+            % this pixel; append to all values for this pixel
+            IN_all = inpolygon(lon_array{p}, lat_array{p}, loncorn_p, latcorn_p);
+            pix_coverage(end+1) = sum(IN_all)/numel(no2_array{p});
+        
+        end % End the loop over all profiles
+        
+        % Save the results for this pixel
+        omi_lon_out(pix) = omi_lon_p;
+        omi_lat_out(pix) = omi_lat_p;
+        omi_no2_out(pix) = omi_no2_p;
+        behr_no2_out(pix) = behr_no2_p;
+        if ~isempty(pix_aircraft_no2); air_no2_out(pix) = nanmean(pix_aircraft_no2); end
+        
+        db.all_profiles{pix} = pix_aircraft_no2;
+        db.quality_flags{pix} = pix_flags;
+        db.coverage_fraction{pix} = pix_coverage;
+        db.latcorn(:,pix) = latcorn_p;
+        db.loncorn(:,pix) = loncorn_p;
+        db.strat_NO2(pix) = total_omi_no2_p - omi_no2_p;
+        db.modis_cloud(pix) = modis_cloud_p;
+    
+    end % End the loop over all pixels
+    
     % Clean up the output variables
     fills = air_no2_out == -9e9;
     omi_lon_out = omi_lon_out(~fills);
@@ -598,14 +623,15 @@ else
     omi_no2_out = omi_no2_out(~fills);
     behr_no2_out = behr_no2_out(~fills);
     air_no2_out = air_no2_out(~fills);
-    air_no2_stderr = air_no2_stderr(~fills);
-    coverage_fraction = coverage_fraction(~fills);
-    quality_flags = quality_flags(~fills);
     
+    db.all_profiles = db.all_profiles(~fills);
+    db.coverage_fraction = db.coverage_fraction(~fills);
+    db.quality_flags = db.quality_flags(~fills);
     db.latcorn = db.latcorn(:,~fills);
     db.loncorn = db.loncorn(:,~fills);
     db.strat_NO2 = db.strat_NO2(~fills);
     db.modis_cloud = db.modis_cloud(~fills);
+    
+    fprintf('# rejected bottom 3 km = %d\n',rej);
 end
 end
-
