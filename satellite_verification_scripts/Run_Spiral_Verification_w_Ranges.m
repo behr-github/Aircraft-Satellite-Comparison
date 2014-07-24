@@ -17,8 +17,8 @@ presfield = 'STAT_PRESSURE';
 
 tz = 'auto'; %set to 'auto' to calculate the time zone based on the mean longitude of the flight
 
-merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
+merge_dir = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
+behr_dir = '/Volumes/share-sat/SAT/OMI/Bare_SP_Files/';
 range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges.mat';
 
 DEBUG_LEVEL = 2;

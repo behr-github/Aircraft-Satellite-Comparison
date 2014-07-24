@@ -62,6 +62,14 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, db 
 %   recognized by this function; the second is useful for campaigns such as
 %   ARCTAS-CA that do not identify spirals.
 %
+%   starttime: Profiles must have a start time later that this. Pass as a
+%   string using military time, e.g. 16:00 instead of 4:00 pm.  This is
+%   always in local standard time.  Set to 10:45 by default.  Allows user
+%   to restrict aircraft data to times near satellite overpass.
+%
+%   endtime: Profiles must have a start time before this. See starttime for
+%   more details.  Set to 16:45 by default.
+%
 %   no2field: Defaults to 'NO2_LIF', if this is not the NO2 field, use this
 %   parameter to override that.
 %
@@ -96,6 +104,8 @@ p = inputParser;
 p.addRequired('Merge',@isstruct);
 p.addRequired('Data',@isstruct);
 p.addRequired('timezone', @(x) any(strcmpi(x,{'est','cst','mst','pst','auto'})));
+p.addParamValue('starttime','10:45',@isstr);
+p.addParamValue('endtime','16:45',@isstr);
 p.addParamValue('profiles',[], @(x) size(x,2)==2 || ischar(x));
 p.addParamValue('no2field','',@isstr);
 p.addParamValue('altfield','ALTP',@isstr);
@@ -116,6 +126,8 @@ if numel(Data)>1; error('bdy_layer_verify:DataInput','Only pass one top-level el
 Merge = pout.Merge;
 Data = pout.Data;
 tz = pout.timezone;
+starttime = pout.starttime;
+endtime = pout.endtime;
 profiles = pout.profiles;
 no2field = pout.no2field;
 altfield = pout.altfield;
@@ -219,8 +231,8 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     db.all_profiles = NaN;
     db.coverage_fraction = NaN;
     db.quality_flags = uint16(2^15+1);
-    db.latcorn = NaN(4,1);
     db.loncorn = NaN(4,1);
+    db.latcorn = NaN(4,1);
     db.strat_NO2 = NaN;
     db.modis_cloud = NaN;
 else
@@ -247,8 +259,8 @@ else
         db.all_profiles = NaN;
         db.coverage_fraction = NaN;
         q_base = bitset(q_base,1,1); db.quality_flags = bitset(q_base,8,1);
-        db.latcorn = NaN(4,1);
         db.loncorn = NaN(4,1);
+        db.latcorn = NaN(4,1);
         db.strat_NO2 = NaN;
         db.modis_cloud = NaN;
         return
@@ -297,7 +309,7 @@ else
         
         % Remove from consideration any profiles with a start time before 10:45
         % am or after 4:45 pm local standard time
-        yy = start_times >= local2utc('10:45',tz) & start_times <= local2utc('16:45',tz);
+        yy = start_times >= local2utc(starttime,tz) & start_times <= local2utc(endtime,tz);
         unique_profnums = unique_profnums(yy); start_times = start_times(yy);
         
         % Save each profile's NO2, altitude, radar altitude, latitude, and
@@ -319,7 +331,7 @@ else
     elseif strcmp(spiral_mode,'utcranges')
         % Find all the utc start times that are between 10:45 and 4:45 local
         % standard time
-        yy = Ranges(:,1) >= local2utc('10:45',tz) & Ranges(:,1) <= local2utc('16:45',tz);
+        yy = Ranges(:,1) >= local2utc(starttime,tz) & Ranges(:,1) <= local2utc(endtime,tz);
         ranges_in_time = Ranges(yy,:);
         s = [1,sum(yy)];
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
@@ -378,9 +390,11 @@ else
     try
         modis_cloud = Data2.MODISCloud(xx);
     catch err
-        % If "MODISCloud" is not a field, fill with import variable with
-        % fill values.
-        if strcmp(err.identifier,'MATLAB:nonExistentField')
+        % If "MODISCloud" is not a field, or if it only contains a single
+        % value of "0" or is empty (thus the field was created but never
+        % had anything entered), fill with import variable with fill
+        % values.
+        if strcmp(err.identifier,'MATLAB:nonExistentField') || (strcmp(err.identifier,'MATLAB:badsubscript') && isempty(Data2.MODISCloud)) || (strcmp(err.identifier,'MATLAB:badsubscript') && numel(Data2.MODISCloud) == 1 && Data2.MODISCloud == 0)
             if DEBUG_LEVEL > 0; fprintf('    No BEHR data for this swath\n'); end
             q_base = bitset(q_base,9,1);
             modis_cloud = -127*ones(size(xx));
@@ -423,7 +437,7 @@ else
     % described in her paper), we will require that there be 20 measurements
     % below 3 km for that pixel, and that the pixel's VZA be less than 60
     % degrees.
-    rej = 0;
+    
     for pix=1:numel(omi_lat)
         omi_lon_p = omi_lon(pix); omi_lat_p = omi_lat(pix);
         loncorn_p = corner_lon(:,pix); latcorn_p = corner_lat(:,pix);
@@ -461,7 +475,6 @@ else
             lat_3km = lat_array{p}(alt_array{p}<3);
             IN_3km = inpolygon(lon_3km, lat_3km, loncorn_p, latcorn_p);
             if sum(~isnan(no2_3km(IN_3km)))<20
-                rej = rej+1;
                 continue % Pixel must have 20 valid measurments between 0-3 km altitude (good sampling of boundary layer)
             end
             
@@ -632,6 +645,5 @@ else
     db.strat_NO2 = db.strat_NO2(~fills);
     db.modis_cloud = db.modis_cloud(~fills);
     
-    fprintf('# rejected bottom 3 km = %d\n',rej);
 end
 end

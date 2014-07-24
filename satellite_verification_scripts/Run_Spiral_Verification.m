@@ -10,6 +10,9 @@ date_end = '07/31/2011';
 
 no2field = 'NO2_LIF';
 
+starttime = '13:00';
+endtime = '14:00';
+
 tz = 'auto';
 
 merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
@@ -52,7 +55,7 @@ for d=1:numel(dates)
     
     for swath=1:numel(Data)
         S=S+1;
-        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',DEBUG_LEVEL,'no2field',no2field);
+        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',DEBUG_LEVEL,'no2field',no2field,'starttime',starttime,'endtime',endtime);
         date_cell{S} = repmat({curr_date},numel(lon_i{S}),1);
     end
 end
