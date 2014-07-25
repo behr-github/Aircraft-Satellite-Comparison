@@ -169,7 +169,6 @@ for a = 1:numfiles
             field = line(1:(comma_pos-1));
             unit = line((comma_pos+2):end);
         end
-        field_array{f+1} = field;
         
         % Sanitize the field name, characters that don't belong in variable
         % names will be removed. Also, prepend 'f_' to any field names 
@@ -177,6 +176,8 @@ for a = 1:numfiles
         if ~isempty(regexp(field(1),'[^a-zA-Z]')); field = ['f_',field]; end % regexp(field,'[^a-zA-Z]','ONCE') DOES NOT WORK: this line needs to test if the first character in 'field' is not a letter.
         eval(sprintf('Merge.Data.%s.Unit = ''%s'';',field,unit))
         eval(sprintf('Merge.Data.%s.Fill = %d;',field,fill_vals(f)));
+        
+        field_array{f+1} = field;
     end
     
     % Read lines until we've hit the big table of values
@@ -229,16 +230,14 @@ for a = 1:numfiles
                 field = new_field;
             else
                 question = sprintf('Header field %s does not match expected field %s. Which should be used?',new_field, old_field);
-                choice = questdlg(question,'Field Mismatch','Header','Existing','Header for all fields','Existing for all fields','Header');
+                choice = questdlg(question,'Field Mismatch','Header','Existing','Cancel run','Header');
                 switch choice
                     case 'Header'
                         field = new_field; field_bool(r) = 0;
                     case 'Existing'
                         field = old_field; field_bool(r) = 1;
-                    case 'Header for all fields'
-                        field = new_field; field_bool(:) = 0;
-                    case 'Existing for all fields'
-                        field = old_field; field_bool(:) = 1;
+                    case 'Cancel run'
+                        error('read_merge:user','User cancelled run');
                 end
             end
         end

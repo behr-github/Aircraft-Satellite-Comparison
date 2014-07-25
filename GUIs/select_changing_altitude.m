@@ -407,6 +407,8 @@ if ok
     S.file = filename;
     utc = Merge.Data.UTC.Values;
     alt = eval(sprintf('Merge.Data.%s.Values',fieldname));
+    fills = eval(sprintf('Merge.Data.%s.Fill',fieldname));
+    alt(alt==fills)=NaN;
     hold off
     alt_line = line(utc,alt,'Parent',S.alt_plot,'color',[0 0.5 0],'HitTest','off');
     hold on

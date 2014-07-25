@@ -19,11 +19,11 @@ tz = 'auto'; %set to 'auto' to calculate the time zone based on the mean longitu
 
 merge_dir = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
 behr_dir = '/Volumes/share-sat/SAT/OMI/Bare_SP_Files/';
-range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges.mat';
+range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges_Inclusive.mat';
 
 DEBUG_LEVEL = 2;
 
-load(range_file); range_dates = {Ranges.Date};
+load(range_file); range_dates = cellstr(datestr({Ranges.Date},29));
 dates = datenum(date_start):datenum(date_end);
 
 S=0; clear('db');

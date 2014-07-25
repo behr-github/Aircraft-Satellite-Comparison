@@ -235,6 +235,7 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     db.latcorn = NaN(4,1);
     db.strat_NO2 = NaN;
     db.modis_cloud = NaN;
+    db.profnums = NaN;
 else
     if percent_nans > 0.9;
         warning('Merge file for %s has %.0f%% NO2 values as NaNs',datestr(merge_datenum,2),percent_nans*100);
@@ -263,6 +264,7 @@ else
         db.latcorn = NaN(4,1);
         db.strat_NO2 = NaN;
         db.modis_cloud = NaN;
+        db.profnums = NaN;
         return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
@@ -316,7 +318,7 @@ else
         % longitude as an entry in a cell array
         s = size(unique_profnums);
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
-        lat_array = cell(s); lon_array = cell(s);
+        lat_array = cell(s); lon_array = cell(s); profnum_array = cell(s);
         pres_array = cell(s); temp_array = cell(s);
         for a=1:numel(unique_profnums)
             xx = profnum == unique_profnums(a);
@@ -327,6 +329,7 @@ else
             lon_array{a} = lon(xx);
             pres_array{a} = pres(xx);
             temp_array{a} = temperature(xx);
+            profnum_array{a} = unique_profnums(a);
         end
     elseif strcmp(spiral_mode,'utcranges')
         % Find all the utc start times that are between 10:45 and 4:45 local
@@ -336,7 +339,7 @@ else
         s = [1,sum(yy)];
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
         lat_array = cell(s); lon_array = cell(s);
-        pres_array = cell(s); temp_array = cell(s);
+        pres_array = cell(s); temp_array = cell(s); profnum_array = cell(s);
         for a=1:s(2)
             xx = utc >= ranges_in_time(a,1) & utc <= ranges_in_time(a,2);
             no2_array{a} = no2(xx);
@@ -346,6 +349,7 @@ else
             lon_array{a} = lon(xx);
             pres_array{a} = pres(xx);
             temp_array{a} = temperature(xx);
+            profnum_array{a} = Ranges(a,:);
         end
     end
     
@@ -426,6 +430,8 @@ else
     db.latcorn = -9e9*ones(4,npix);
     db.strat_NO2 = -9e9*ones(npix,1);
     db.modis_cloud = -9e9*ones(npix,1);
+    db.profnums = cell(npix,1);
+    
     
     % Also, define Avogadro's number and gas constant;
     Av = 6.022e23; % molec. / mol
@@ -444,12 +450,19 @@ else
         omi_no2_p = omi_no2(pix); behr_no2_p = behr_no2(pix);
         tropopause_p = TropopausePres(pix); vza_p = vza(pix);
         modis_cloud_p = modis_cloud(pix); total_omi_no2_p = total_omi_no2(pix);
+        % Skip pixels with corners near +/- 180 if the corners have
+        % differing signs; this will confuse the algorithm that matches
+        % spirals to pixels
+        if any(abs(loncorn_p)>179) && abs(mean(sign(loncorn_p))) ~= 1
+            continue
+        end
+        
         % Check the vza
         if vza_p > 60; continue; end
         
         % Initialize matrices to hold values that will be returned per
         % profile
-        pix_aircraft_no2 = []; pix_coverage = []; pix_flags = [];
+        pix_aircraft_no2 = []; pix_coverage = []; pix_flags = []; pix_profnums = [];
         pix_q_flag = q_base;
         % Check if any profiles have any part within this pixel, if so,
         % integrate that profile and average the column value to the pixel
@@ -564,8 +577,22 @@ else
             no2bins = no2bins(bb:end);
             presbins = presbins(bb:end);
             tempbins = tempbins(bb:end);
+            % If the surface pressure is less (i.e. above) the second
+            % remaining bin, check with the user to proceed.
             if surface_pres < presbins(2);
-                error('spiral_ver:surface_pressure','Surface pressure is above the second valid bin, seems unphysical');
+                queststring = sprintf('Surface P (%.4f) less than second bin (%.4f). \nLow alt radar nan flag is %d. \n Continue?',surface_pres, presbins(2), bitget(q_flag,6));
+                choice = questdlg(queststring,'Surface pressure','Yes','No','Abort run','No');
+                switch choice
+                    case 'Yes'
+                        cc = presbins < surface_pres;
+                        no2bins = no2bins(cc);
+                        presbins = presbins(cc);
+                        tempbins = tempbins(cc);
+                    case 'No'
+                        continue
+                    case 'Abort run'
+                        error('spiral_ver:surface_pres','Surface pressure < second bin.');
+                end
             elseif surface_pres < presbins(1); % if surface is above the bottom bin center...
                 presbins(1) = surface_pres;
                 nans = isnan(tempbins);
@@ -609,6 +636,10 @@ else
             % this pixel; append to all values for this pixel
             IN_all = inpolygon(lon_array{p}, lat_array{p}, loncorn_p, latcorn_p);
             pix_coverage(end+1) = sum(IN_all)/numel(no2_array{p});
+            
+            % Append the profnum number so that this can be used for
+            % counting the number of profiles found
+            pix_profnums = [pix_profnums; profnum_array{p}];
         
         end % End the loop over all profiles
         
@@ -626,6 +657,9 @@ else
         db.loncorn(:,pix) = loncorn_p;
         db.strat_NO2(pix) = total_omi_no2_p - omi_no2_p;
         db.modis_cloud(pix) = modis_cloud_p;
+        if ~isempty(pix_profnums); db.profnums{pix} = pix_profnums;
+        else db.profnums{pix} = [];
+        end
     
     end % End the loop over all pixels
     
@@ -644,6 +678,7 @@ else
     db.loncorn = db.loncorn(:,~fills);
     db.strat_NO2 = db.strat_NO2(~fills);
     db.modis_cloud = db.modis_cloud(~fills);
+    db.profnums = db.profnums(~fills);
     
 end
 end
