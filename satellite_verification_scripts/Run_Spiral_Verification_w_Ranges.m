@@ -9,6 +9,8 @@
 date_start = '03/04/2006';
 date_end = '05/15/2006';
 
+debugreject = 1; %Set to 1 to enable looking at pixel rejection.
+
 no2field = 'NO2';
 altfield = 'ALTITUDE_GPS';
 radarfield = 'ALTITUDE_RADAR';
@@ -26,7 +28,7 @@ DEBUG_LEVEL = 2;
 load(range_file); range_dates = cellstr(datestr({Ranges.Date},29));
 dates = datenum(date_start):datenum(date_end);
 
-S=0; clear('db');
+S=0; clear('db'); date_list = cell(numel(dates)*15);
 for d=1:numel(dates)
     % Load the merge and BEHR files
     curr_date = datestr(dates(d),29);
@@ -64,9 +66,12 @@ for d=1:numel(dates)
     
     for swath=1:numel(Data)
         S=S+1;
-        [lon_lod{S}, lat_lod{S}, omino2_lod{S}, behrno2_lod{S}, airno2_lod{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield);
+        [lon_lod{S}, lat_lod{S}, omino2_lod{S}, behrno2_lod{S}, airno2_lod{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield,'clean',~debugreject);
+        date_list{S} = curr_date;
     end
 end
+
+date_list = date_list(1:S);
 
 % concatenate the output
 lon_lodall = cat(1,lon_lod{:});

@@ -4,14 +4,14 @@
 %   path for that day and the pixel boundaries, plus a second figure where
 %   the pixel centers are marked with the difference in columns
 
-date_start = '07/01/2011';
-date_end = '07/31/2011';
-no2field = 'NO2_LIF';   %For Baltimore, this is NO2_LIF or NO2_NCAR
+date_start = '03/04/2006';
+date_end = '05/31/2006';
+no2field = 'NO2';   %For Baltimore, this is NO2_LIF or NO2_NCAR
 %For CA/TX, this is NO2_MixingRatio_LIF or NO2_MixingRatio
 
-tz = 'est';
+tz = 'auto';
 
-states={'md'};
+states={'tx'};
 
 % Which plots to show
 avgNO2 = true;
@@ -19,12 +19,13 @@ deltaNO2 = true;
 dailySatNO2 = false;
 stratNO2 = false;
 
-merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
+merge_dir = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
+behr_dir = '/Volumes/share-sat/SAT/OMI/Gridded_SP_Files/';
+behr_prefix = 'OMI_SP';
 
-behr_map_file = '/Users/Josh/Documents/MATLAB/Figures/Sat Verification/Debugging Spiral Method/BEHR Columns July 2011.mat';
+behr_map_file = '/Users/Josh/Documents/MATLAB/Figures/Sat Verification/INTEX B/OMI SP NO2 over Mexico.mat';
 
-DEBUG_LEVEL = 0;
+DEBUG_LEVEL = 2;
 
 dates = datenum(date_start):datenum(date_end);
 
@@ -39,7 +40,7 @@ for d=1:numel(dates)
     month = curr_date(6:7);
     day = curr_date(9:10);
     merge_filename = sprintf('*%s_%s_%s.mat',year,month,day);
-    behr_filename = sprintf('OMI_BEHR_*%s%s%s.mat',year,month,day);
+    behr_filename = sprintf('%s*%s%s%s.mat',behr_prefix,year,month,day);
     
     merge_files = dir(fullfile(merge_dir,merge_filename));
     if numel(merge_files)==1

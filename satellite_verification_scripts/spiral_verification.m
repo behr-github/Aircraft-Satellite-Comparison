@@ -98,6 +98,9 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, db 
 %   DEBUG_LEVEL: The level of output messages to write; 0 = none, 1 =
 %   normal; 2 = verbose
 %
+%   clean: Setting this to 0 will not remove any pixels with a fill value -
+%   useful only for debugging why a pixel is rejected.
+%
 %   Josh Laughner <joshlaugh5@gmail.com> 4 Jul 2014
 
 p = inputParser;
@@ -116,6 +119,7 @@ p.addParamValue('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis'})));
 p.addParamValue('cloud_frac_max',0.2, @isscalar);
 p.addParamValue('rowanomaly','AlwaysByRow',@(x) strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'}));
 p.addParamValue('DEBUG_LEVEL',1,@isscalar);
+p.addParamValue('clean',1,@isscalar);
 
 p.parse(Merge,Data,timezone,varargin{:});
 pout = p.Results;
@@ -138,6 +142,7 @@ cloud_prod = pout.cloud_product;
 cloud_frac_max = pout.cloud_frac_max;
 rowanomaly = pout.rowanomaly;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
+clean_bool = pout.clean;
 
 merge_datenum = datenum(Merge.metadata.date);
 
@@ -236,6 +241,7 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     db.strat_NO2 = NaN;
     db.modis_cloud = NaN;
     db.profnums = NaN;
+    db.reject = NaN;
 else
     if percent_nans > 0.9;
         warning('Merge file for %s has %.0f%% NO2 values as NaNs',datestr(merge_datenum,2),percent_nans*100);
@@ -265,6 +271,7 @@ else
         db.strat_NO2 = NaN;
         db.modis_cloud = NaN;
         db.profnums = NaN;
+        db.reject = NaN;
         return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
@@ -435,6 +442,7 @@ else
     db.strat_NO2 = -9e9*ones(npix,1);
     db.modis_cloud = -9e9*ones(npix,1);
     db.profnums = cell(npix,1);
+    db.reject = uint8(zeros(npix,1));
     
     
     % Also, define Avogadro's number and gas constant;
@@ -454,15 +462,18 @@ else
         omi_no2_p = omi_no2(pix); behr_no2_p = behr_no2(pix);
         tropopause_p = TropopausePres(pix); vza_p = vza(pix);
         modis_cloud_p = modis_cloud(pix); total_omi_no2_p = total_omi_no2(pix);
+        
+        pix_reject = uint8(0);
         % Skip pixels with corners near +/- 180 if the corners have
         % differing signs; this will confuse the algorithm that matches
         % spirals to pixels
         if any(abs(loncorn_p)>179) && abs(mean(sign(loncorn_p))) ~= 1
+            pix_reject = bitset(pix_reject,4);
             continue
         end
         
         % Check the vza
-        if vza_p > 60; continue; end
+        if vza_p > 60; pix_reject = bitset(pix_reject,5); continue; end
         
         % Initialize matrices to hold values that will be returned per
         % profile
@@ -471,16 +482,18 @@ else
         % Check if any profiles have any part within this pixel, if so,
         % integrate that profile and average the column value to the pixel
         for p=1:n
+            % Now check whether the profile is inside the pixel using
+            % logical operations, which are much faster than inpolygon().
+            if all(lon_array{p} < min(loncorn_p)) || all(lon_array{p} > max(loncorn_p)) || all(lat_array{p} < min(latcorn_p)) || all(lat_array{p} > max(latcorn_p))
+                continue
             % If the profile does not go below 500 m, skip it anyway (per
             % Hains, require for good BL sampling)
-            if min(radar_array{p}) > 0.5
+            elseif min(radar_array{p}) > 0.5
+                pix_reject = bitset(pix_reject,1);
                 continue
-                % If the entire profile was fill values (i.e. instrument trouble) obviously we have to skip this profile.
+            % If the entire profile was fill values (i.e. instrument trouble) obviously we have to skip this profile.
             elseif all(isnan(no2_array{p}));
-                continue
-                % Now check whether the profile is inside the pixel using
-                % logical operations, which are much faster than inpolygon().
-            elseif all(lon_array{p} < min(loncorn_p)) || all(lon_array{p} > max(loncorn_p)) || all(lat_array{p} < min(latcorn_p)) || all(lat_array{p} > max(latcorn_p))
+                pix_reject = bitset(pix_reject,2);
                 continue
             end
             
@@ -492,6 +505,7 @@ else
             lat_3km = lat_array{p}(alt_array{p}<3);
             IN_3km = inpolygon(lon_3km, lat_3km, loncorn_p, latcorn_p);
             if sum(~isnan(no2_3km(IN_3km)))<20
+                pix_reject = bitset(pix_reject,3);
                 continue % Pixel must have 20 valid measurments between 0-3 km altitude (good sampling of boundary layer)
             end
             
@@ -672,25 +686,27 @@ else
         if ~isempty(pix_profnums); db.profnums{pix} = pix_profnums;
         else db.profnums{pix} = [];
         end
+        db.reject(pix) = pix_reject;
     
     end % End the loop over all pixels
     
     % Clean up the output variables
-    fills = air_no2_out == -9e9;
-    omi_lon_out = omi_lon_out(~fills);
-    omi_lat_out = omi_lat_out(~fills);
-    omi_no2_out = omi_no2_out(~fills);
-    behr_no2_out = behr_no2_out(~fills);
-    air_no2_out = air_no2_out(~fills);
-    
-    db.all_profiles = db.all_profiles(~fills);
-    db.coverage_fraction = db.coverage_fraction(~fills);
-    db.quality_flags = db.quality_flags(~fills);
-    db.latcorn = db.latcorn(:,~fills);
-    db.loncorn = db.loncorn(:,~fills);
-    db.strat_NO2 = db.strat_NO2(~fills);
-    db.modis_cloud = db.modis_cloud(~fills);
-    db.profnums = db.profnums(~fills);
-    
+    if clean_bool
+        fills = air_no2_out == -9e9;
+        omi_lon_out = omi_lon_out(~fills);
+        omi_lat_out = omi_lat_out(~fills);
+        omi_no2_out = omi_no2_out(~fills);
+        behr_no2_out = behr_no2_out(~fills);
+        air_no2_out = air_no2_out(~fills);
+        
+        db.all_profiles = db.all_profiles(~fills);
+        db.coverage_fraction = db.coverage_fraction(~fills);
+        db.quality_flags = db.quality_flags(~fills);
+        db.latcorn = db.latcorn(:,~fills);
+        db.loncorn = db.loncorn(:,~fills);
+        db.strat_NO2 = db.strat_NO2(~fills);
+        db.modis_cloud = db.modis_cloud(~fills);
+        db.profnums = db.profnums(~fills);
+    end
 end
 end
