@@ -64,13 +64,13 @@ for d=1:numel(dates)
     
     for swath=1:numel(Data)
         S=S+1;
-        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield);
+        [lon_lod{S}, lat_lod{S}, omino2_lod{S}, behrno2_lod{S}, airno2_lod{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield);
     end
 end
 
 % concatenate the output
-lon_iall = cat(1,lon_i{:});
-lat_iall = cat(1,lat_i{:});
-omino2_iall = cat(1, omino2_i{:});
-behrno2_iall = cat(1, behrno2_i{:});
-airno2_iall = cat(1, airno2_i{:});
+lon_lodall = cat(1,lon_lod{:});
+lat_lodall = cat(1,lat_lod{:});
+omino2_lodall = cat(1, omino2_lod{:});
+behrno2_lodall = cat(1, behrno2_lod{:});
+airno2_lodall = cat(1, airno2_lod{:});

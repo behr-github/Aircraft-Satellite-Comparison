@@ -279,6 +279,10 @@ else
         M1 = sortrows([pres', no2', temperature']);
         top = find(~isnan(M1(:,2)),10,'first'); % Since lower pressure = higher altitude, we want the first 10 NO2 measurements when sorted by pressure.
         no2_comp_top_med = median(M1(top,2)); temp_comp_top_med = nanmedian(M1(top,3)); pres_comp_top_med = nanmedian(M1(top,1));
+        if no2_comp_top_med < 3; 
+            no2_comp_top_med = 1.5; 
+            if DEBUG_LEVEL > 0; fprintf('Composite profile top < LoD\n'); end
+        end
         no2_composite(end) = no2_comp_top_med;
         
         % Temperature should have a linear relationship to altitude
@@ -512,6 +516,14 @@ else
             M = sortrows([pres_array{p}', no2_array{p}', radar_array{p}', temp_array{p}', alt_array{p}']);
             xx = find(~isnan(M(:,2)),10,'last'); zz = find(~isnan(M(:,2)),10,'first');
             bottom_med_no2 = median(M(xx,2)); top_med_no2 = median(M(zz,2));
+            
+            %Hains substitutes 1.5 ppt for any median no2 mixing ratios
+            %less than the LoD (3 ppt)
+            if top_med_no2 < 3; 
+                top_med_no2 = 1.5; 
+                if DEBUG_LEVEL>0; fprintf('Profile top median NO2 < LoD\n'); end
+            end
+            
             bottom_med_temp = nanmedian(M(xx,4)); top_med_temp = nanmedian(M(zz,4));
             bottom_med_radar_alt = nanmedian(M(xx,3)); bottom_med_pres = nanmedian(M(xx,1));
             bottom_med_GPS_alt = nanmedian(M(xx,5));
