@@ -195,6 +195,8 @@ end
 % First handle the aircraft data
 [no2, utc, alt, lon, lat] = remove_merge_fills(Merge,no2field,'alt',altfield);
 no2(no2<0) = NaN; % Must remove any negative values from consideration because they will return imaginary components during the log-log interpolation
+llfill = Merge.Data.LATITUDE.Fill; xxll = lon == llfill | lat == llfill; % Make sure there are no fill values in longitude or latitude;
+lon(xxll) = NaN; lat(xxll) = NaN;
 radar_alt = remove_merge_fills(Merge,radarfield,'alt',altfield);
 pres = remove_merge_fills(Merge,presfield,'alt',altfield);
 temperature = remove_merge_fills(Merge,Tfield,'alt',altfield);
@@ -484,7 +486,9 @@ else
         for p=1:n
             % Now check whether the profile is inside the pixel using
             % logical operations, which are much faster than inpolygon().
-            if all(lon_array{p} < min(loncorn_p)) || all(lon_array{p} > max(loncorn_p)) || all(lat_array{p} < min(latcorn_p)) || all(lat_array{p} > max(latcorn_p))
+            lontest = lon_array{p}; lontest(isnan(lontest)) = [];
+            lattest = lat_array{p}; lattest(isnan(lattest)) = [];
+            if all(lontest < min(loncorn_p)) || all(lontest > max(loncorn_p)) || all(lattest < min(latcorn_p)) || all(lattest > max(latcorn_p))
                 continue
             % If the profile does not go below 500 m, skip it anyway (per
             % Hains, require for good BL sampling)
