@@ -6,10 +6,10 @@
 %
 %  Josh Laughner <joshlaugh5@gmail.com> 4 Jul 2014
 
-date_start = '03/04/2006';
+date_start = '03/01/2006';
 date_end = '05/15/2006';
 
-debugreject = 1; %Set to 1 to enable looking at pixel rejection.
+debugreject = 0; %Set to 1 to enable looking at pixel rejection.
 
 no2field = 'NO2';
 altfield = 'ALTITUDE_GPS';
@@ -23,7 +23,7 @@ merge_dir = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
 behr_dir = '/Volumes/share-sat/SAT/OMI/Bare_SP_Files/';
 range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges_Inclusive.mat';
 
-DEBUG_LEVEL = 2;
+DEBUG_LEVEL = 1;
 
 load(range_file); range_dates = cellstr(datestr({Ranges.Date},29));
 dates = datenum(date_start):datenum(date_end);
@@ -66,16 +66,17 @@ for d=1:numel(dates)
     
     for swath=1:numel(Data)
         S=S+1;
-        [lon_lod{S}, lat_lod{S}, omino2_lod{S}, behrno2_lod{S}, airno2_lod{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield,'clean',~debugreject);
+        [lon_ralt{S}, lat_ralt{S}, omino2_ralt{S}, behrno2_ralt{S}, airno2_ralt{S}, db(S)] = spiral_verification_avg_pix2prof(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'cloud_product','rad','cloud_frac',0.5,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield,'clean',~debugreject);
         date_list{S} = curr_date;
     end
+    dummy = 1;
 end
 
 date_list = date_list(1:S);
 
 % concatenate the output
-lon_lodall = cat(1,lon_lod{:});
-lat_lodall = cat(1,lat_lod{:});
-omino2_lodall = cat(1, omino2_lod{:});
-behrno2_lodall = cat(1, behrno2_lod{:});
-airno2_lodall = cat(1, airno2_lod{:});
+lon_raltall = cat(1,lon_ralt{:});
+lat_raltall = cat(1,lat_ralt{:});
+omino2_raltall = cat(1, omino2_ralt{:});
+behrno2_raltall = cat(1, behrno2_ralt{:});
+airno2_raltall = cat(1, airno2_ralt{:});

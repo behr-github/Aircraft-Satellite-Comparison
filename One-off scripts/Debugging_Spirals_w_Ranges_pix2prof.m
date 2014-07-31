@@ -4,7 +4,7 @@
 %   path for that day and the pixel boundaries, plus a second figure where
 %   the pixel centers are marked with the difference in columns
 
-date_start = '03/16/2006';
+date_start = '05/04/2006';
 date_end = '05/31/2006';
 no2field = 'NO2';   %For Baltimore, this is NO2_LIF or NO2_NCAR
 %For CA/TX, this is NO2_MixingRatio_LIF or NO2_MixingRatio
@@ -15,19 +15,21 @@ presfield = 'STAT_PRESSURE';
 
 tz = 'auto';
 
-states={'tx'};
+states={'ak'};
 
 % Which plots to show
-avgNO2 = false;
-deltaNO2 = true; deltatype = 'omi'; %set to "omi" or "behr"
+avgNO2 = true;
+deltaNO2 = true; 
+    deltatype = 'omi'; %set to "omi" or "behr"
+    plotflightseg = true; % setting to true will plot the segments of the plane's flight that are used to get the pixel measurements
 dailySatNO2 = false;
 stratNO2 = false;
 
 merge_dir = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
 behr_dir = '/Volumes/share-sat/SAT/OMI/Gridded_SP_Files/';
-behr_prefix = 'OMI_SP';
+behr_prefix = 'OMI_SP_griddedNW_';
 
-behr_map_file = '/Users/Josh/Documents/MATLAB/Figures/Sat Verification/INTEX B/OMI SP NO2 over Mexico.mat';
+behr_map_file = '/Users/Josh/Documents/MATLAB/Figures/Sat Verification/INTEX B/OMI SP NO2 over NW May 06.mat';
 range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges_Inclusive.mat';
 
 DEBUG_LEVEL = 2;
@@ -46,7 +48,7 @@ for d=1:numel(dates)
     month = curr_date(6:7);
     day = curr_date(9:10);
     merge_filename = sprintf('*%s_%s_%s.mat',year,month,day);
-    behr_filename = sprintf('%s*%s%s%s.mat',behr_prefix,year,month,day);
+    behr_filename = sprintf('%s%s%s%s.mat',behr_prefix,year,month,day);
     
     merge_files = dir(fullfile(merge_dir,merge_filename));
     if numel(merge_files)==1
@@ -95,10 +97,15 @@ for d=1:numel(dates)
             m_grid('linestyle','none');
             
             for a=1:numel(db)
-                s = size(db(a).loncorn);
-                if s(2) > 0;
-                    for b=1:s(2)
-                        m_line([db(a).loncorn(:,b); db(a).loncorn(1,b)], [db(a).latcorn(:,b); db(a).latcorn(1,b)],'color','k','linewidth',2)
+                if ~isempty(airno2{a})
+                    s = numel(db(a).loncorn);
+                    for b=1:s
+                        if ~isnan(airno2{a})
+                            loncorn = db(a).loncorn{b}; latcorn = db(a).latcorn{b};
+                            for c=1:size(loncorn,2)
+                                m_line([loncorn(:,c); loncorn(1,c)], [latcorn(:,c); latcorn(1,c)],'color','w','linewidth',2)
+                            end
+                        end
                     end
                 end
             end
@@ -116,17 +123,29 @@ for d=1:numel(dates)
             else delta = cat(1,omino2{:}) - cat(1,airno2{:});
             end
             for a=1:numel(db)
-                if ~isempty(airno2{a})
-                    s = size(db(a).loncorn);
-                    if s(2) > 0;
-                        for b=1:s(2)
-                            line([db(a).loncorn(:,b); db(a).loncorn(1,b)], [db(a).latcorn(:,b); db(a).latcorn(1,b)],'color','b','linewidth',2)
+                if ~isempty(airno2{a}) 
+                    s = numel(db(a).loncorn);
+                    for b=1:s
+                        if ~isnan(airno2{a})
+                            loncorn = db(a).loncorn{b}; latcorn = db(a).latcorn{b};
+                            for c=1:size(loncorn,2)
+                                line([loncorn(:,c); loncorn(1,c)], [latcorn(:,c); latcorn(1,c)],'color','b','linewidth',2)
+                            end
                         end
                     end
                 end
             end
             hold on;
-            
+            % Plot the part of the plane's flight that contributed to
+            % measurements
+            rs = cat(1,db.profnums); rs = cat(1,rs{:});
+            for r=1:size(rs,1)
+                myutc = Merge.Data.UTC.Values > rs(r,1) & Merge.Data.UTC.Values < rs(r,2);
+                mylat = Merge.Data.LATITUDE.Values(myutc); mylon = Merge.Data.LONGITUDE.Values(myutc);
+                latlon_fills = mylat == Merge.Data.LATITUDE.Fill | mylon == Merge.Data.LONGITUDE.Fill;
+                mylat = mylat(~latlon_fills); mylon = mylon(~latlon_fills); mylon(mylon>180) = mylon(mylon>180) - 360;
+                line(mylon, mylat, 'color',[0 0.6 0],'linewidth',3);
+            end
             % Make the plot of pixel/profile differences
             scatter(lonall, latall, 20, delta);
             dx = abs(lonbdy(2)-lonbdy(1))/8;
@@ -139,13 +158,14 @@ for d=1:numel(dates)
                 end
                 text(lonall(a)+dx/2+samept*dx, latall(a), sprintf('%+.1e',delta(a)),'BackgroundColor',[0.6 0.6 0.6]);
             end
-            xlim(lonbdy); ylim(latbdy);
+            %xlim(lonbdy); ylim(latbdy);
             colorbar; colormap(blue_red_cmap); caxis([-5e15 5e15]);
             title(sprintf('%s',Merge.metadata.date),'fontsize',20)
             oldposcent = get(fcent,'Position');
             if avgNO2
                 set(fcent,'Position',[oldposmap(3)*2,1,oldposcent(3:4)*1.5]);
             end
+            hold off
         end
         
         %A satellite map for that day

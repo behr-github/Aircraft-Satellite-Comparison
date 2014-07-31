@@ -5,13 +5,13 @@
 %
 %  Josh Laughner <joshlaugh5@gmail.com> 4 Jul 2014
 
-date_start = '07/01/2011';
+date_start = '07/02/2011';
 date_end = '07/31/2011';
 
 no2field = 'NO2_LIF';
 
-starttime = '13:00';
-endtime = '14:00';
+starttime = '12:00';
+endtime = '15:00';
 
 tz = 'auto';
 
@@ -55,7 +55,7 @@ for d=1:numel(dates)
     
     for swath=1:numel(Data)
         S=S+1;
-        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, db(S)] = spiral_verification(Merge,Data(swath),tz,'DEBUG_LEVEL',DEBUG_LEVEL,'no2field',no2field,'starttime',starttime,'endtime',endtime);
+        [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, db(S)] = spiral_verification_avg_pix2prof(Merge,Data(swath),tz,'DEBUG_LEVEL',DEBUG_LEVEL,'no2field',no2field,'starttime',starttime,'endtime',endtime);
         date_cell{S} = repmat({curr_date},numel(lon_i{S}),1);
     end
 end

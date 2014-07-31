@@ -10,11 +10,11 @@
 range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges_Inclusive.mat';
 merge_dir = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
 
-plot_field = 'ALTITUDE_GPS';
+plot_field = 'NO2';%'ALTITUDE_GPS';
 
 plot_map = true; % set to true to plot a map of the flight path as well
-latlim = [10 30]; % Leave these empty to automatically choose lat/lon edges for the map
-lonlim = [-120, -60]; 
+latlim = []; % Leave these empty to automatically choose lat/lon edges for the map
+lonlim = []; 
 
 load coast;
 coastlat = lat; coastlon = long; clear lat long
@@ -43,12 +43,22 @@ for a=1:numel(Ranges);
     plot(utc,data,'color','k');
     hold on
     yl = get(gca,'ylim');
-    colortrack = false(size(utc));
+    if plot_map;
+        sizetrack = ones(size(utc));
+        colortrack = false(size(utc));
+        texttrack = cell(size(Ranges(a).Ranges,1),3);
+    end
     hold on
     for b=1:size(Ranges(a).Ranges,1)
         r = Ranges(a).Ranges(b,:);
-        xx = utc > r(1) & utc < r(2); colortrack(xx) = 1;
-        fill([r(1), r(1), r(2), r(2)],[yl(1), yl(2), yl(2), yl(1)],'r','FaceAlpha',0.4)
+        xx = utc > r(1) & utc < r(2); colortrack(xx) = 1; sizetrack(xx) = 8;
+        fill([r(1), r(1), r(2), r(2)],[yl(1), yl(2), yl(2), yl(1)],'r','FaceAlpha',0.4);
+        if plot_map
+            lat = Merge.Data.LATITUDE.Values(xx); lon = Merge.Data.LONGITUDE.Values(xx);
+            fillval = Merge.Data.LATITUDE.Fill; fills = lat == fillval | lon == fillval;
+            lat(fills) = NaN; lon(fills) = NaN; lon(lon>180) = lon(lon>180)-360;
+            texttrack{b,1} = nanmean(lon); texttrack{b,2} = nanmean(lat); texttrack{b,3} = num2str(b);
+        end
     end
     title(curr_date,'fontsize',18);
     hold on
@@ -59,8 +69,11 @@ for a=1:numel(Ranges);
         lat = Merge.Data.LATITUDE.Values;
         lon(lon==fills)=NaN; lat(lat==fills)=NaN;
         map_fig = figure;
-        scatter(lon,lat,16,colortrack); colormap(blue_red_cmap);
+        scatter(lon,lat,sizetrack,colortrack); colormap(blue_red_cmap);
         line(coastlon, coastlat,'color','k');
+        for t=1:size(texttrack,1)
+            text(texttrack{t,1} + 0.25, texttrack{t,2} - 0.25, texttrack{t,3}, 'BackgroundColor',[0.8 0.8 0.8]);
+        end
         if isempty(latlim)
             xlim([floor(min(lon(:))/30)*30, ceil(max(lon(:))/30)*30]);
             ylim([floor(min(lat(:))/30)*30, ceil(max(lat(:))/30)*30]);

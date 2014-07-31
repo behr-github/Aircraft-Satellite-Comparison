@@ -195,7 +195,7 @@ end
 % First handle the aircraft data
 [no2, utc, alt, lon, lat] = remove_merge_fills(Merge,no2field,'alt',altfield);
 no2(no2<0) = NaN; % Must remove any negative values from consideration because they will return imaginary components during the log-log interpolation
-llfill = Merge.Data.LATITUDE.Fill; xxll = lon == llfill | lat == llfill; % Make sure there are no fill values in longitude or latitude;
+llfill = Merge.Data.LATITUDE.Fill; xxll = lon == llfill | lon == llfill-360 | lat == llfill; % Make sure there are no fill values in longitude or latitude;
 lon(xxll) = NaN; lat(xxll) = NaN;
 radar_alt = remove_merge_fills(Merge,radarfield,'alt',altfield);
 pres = remove_merge_fills(Merge,presfield,'alt',altfield);
@@ -471,11 +471,24 @@ else
         % spirals to pixels
         if any(abs(loncorn_p)>179) && abs(mean(sign(loncorn_p))) ~= 1
             pix_reject = bitset(pix_reject,4);
+            db.reject(pix) = pix_reject;
+            if ~clean_bool
+                omi_lon_out(pix) = omi_lon_p;
+                omi_lat_out(pix) = omi_lat_p;
+            end
             continue
         end
         
         % Check the vza
-        if vza_p > 60; pix_reject = bitset(pix_reject,5); continue; end
+        if vza_p > 60; 
+            pix_reject = bitset(pix_reject,5);
+            db.reject(pix) = pix_reject;
+            if ~clean_bool
+                omi_lon_out(pix) = omi_lon_p;
+                omi_lat_out(pix) = omi_lat_p;
+            end
+            continue; 
+        end
         
         % Initialize matrices to hold values that will be returned per
         % profile
@@ -674,11 +687,14 @@ else
         end % End the loop over all profiles
         
         % Save the results for this pixel
-        omi_lon_out(pix) = omi_lon_p;
-        omi_lat_out(pix) = omi_lat_p;
-        omi_no2_out(pix) = omi_no2_p;
-        behr_no2_out(pix) = behr_no2_p;
-        if ~isempty(pix_aircraft_no2); air_no2_out(pix) = nanmean(pix_aircraft_no2); end
+        
+        if ~isempty(pix_aircraft_no2); 
+            omi_lon_out(pix) = omi_lon_p;
+            omi_lat_out(pix) = omi_lat_p;
+            omi_no2_out(pix) = omi_no2_p;
+            behr_no2_out(pix) = behr_no2_p;
+            air_no2_out(pix) = nanmean(pix_aircraft_no2);
+        end
         
         db.all_profiles{pix} = pix_aircraft_no2;
         db.quality_flags{pix} = pix_flags;
@@ -696,7 +712,7 @@ else
     
     % Clean up the output variables
     if clean_bool
-        fills = air_no2_out == -9e9;
+        fills = omi_lon_out == -9e9;
         omi_lon_out = omi_lon_out(~fills);
         omi_lat_out = omi_lat_out(~fills);
         omi_no2_out = omi_no2_out(~fills);
