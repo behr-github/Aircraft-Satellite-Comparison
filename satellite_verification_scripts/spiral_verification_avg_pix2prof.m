@@ -516,9 +516,9 @@ else
         pix_xx = pix_xx & ~((any(abs(loncorn_p)>20) & abs(mean(sign(loncorn_p),1))~=1)');
         
         % Check the vza
-        %vza_xx = vza_p <= 60;
-        %pix_xx = pix_xx & vza_xx;
-        %pix_reject(vza_xx) = bitset(pix_reject(vza_xx),5*uint8(ones(size(find(vza_xx)))),1);
+        vza_xx = vza_p <= 60;
+        pix_xx = pix_xx & vza_xx;
+        pix_reject(vza_xx) = bitset(pix_reject(vza_xx),5*uint8(ones(size(find(vza_xx)))),1);
         
         % Finally actually check if the profile falls in the pixel
         % using inpolygon(). Recall that we require there to be 20

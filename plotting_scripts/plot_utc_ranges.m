@@ -10,7 +10,7 @@
 range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges_Inclusive.mat';
 merge_dir = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
 
-plot_field = 'NO2';%'ALTITUDE_GPS';
+plot_field = 'ALTITUDE_GPS';
 
 plot_map = true; % set to true to plot a map of the flight path as well
 latlim = []; % Leave these empty to automatically choose lat/lon edges for the map

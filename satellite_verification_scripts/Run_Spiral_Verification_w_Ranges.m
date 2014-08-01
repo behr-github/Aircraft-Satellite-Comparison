@@ -24,6 +24,7 @@ behr_dir = '/Volumes/share-sat/SAT/OMI/Bare_SP_Files/';
 range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges_Inclusive.mat';
 
 DEBUG_LEVEL = 1;
+spirals_DEBUG_LEVEL = 4;
 
 load(range_file); range_dates = cellstr(datestr({Ranges.Date},29));
 dates = datenum(date_start):datenum(date_end);
@@ -66,7 +67,7 @@ for d=1:numel(dates)
     
     for swath=1:numel(Data)
         S=S+1;
-        [lon_1_anyvza_{S}, lat_1_anyvza_{S}, omino2_1_anyvza_{S}, behrno2_1_anyvza_{S}, airno2_1_anyvza_{S}, db(S)] = spiral_verification_avg_pix2prof(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'cloud_product','rad','cloud_frac',0.5,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield,'rowanomaly','RowsByTime','clean',~debugreject);
+        [lon_2_vzalt60_{S}, lat_2_vzalt60_{S}, omino2_2_vzalt60_{S}, behrno2_2_vzalt60_{S}, airno2_2_vzalt60_{S}, db(S)] = spiral_verification_avg_pix2prof(Merge,Data(swath),tz,'DEBUG_LEVEL',spirals_DEBUG_LEVEL,'no2field',no2field,'profiles',Ranges(xx).Ranges,'cloud_product','rad','cloud_frac',0.5,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield,'rowanomaly','RowsByTime','clean',~debugreject);
         date_list{S} = curr_date;
     end
     dummy = 1;
@@ -75,8 +76,8 @@ end
 date_list = date_list(1:S);
 
 % concatenate the output
-lon_1_anyvza_all = cat(1,lon_1_anyvza_{:});
-lat_1_anyvza_all = cat(1,lat_1_anyvza_{:});
-omino2_1_anyvza_all = cat(1, omino2_1_anyvza_{:});
-behrno2_1_anyvza_all = cat(1, behrno2_1_anyvza_{:});
-airno2_1_anyvza_all = cat(1, airno2_1_anyvza_{:});
+lon_2_vzalt60_all = cat(1,lon_2_vzalt60_{:});
+lat_2_vzalt60_all = cat(1,lat_2_vzalt60_{:});
+omino2_2_vzalt60_all = cat(1, omino2_2_vzalt60_{:});
+behrno2_2_vzalt60_all = cat(1, behrno2_2_vzalt60_{:});
+airno2_2_vzalt60_all = cat(1, airno2_2_vzalt60_{:});
