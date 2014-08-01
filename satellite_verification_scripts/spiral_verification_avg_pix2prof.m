@@ -592,8 +592,29 @@ else
         end
         
         bottom_med_temp = nanmedian(M(xx,4)); top_med_temp = nanmedian(M(zz,4));
-        
-        surface_pres = nanmean(terrain_pres_p);
+        bottom_med_radar_alt = nanmedian(M(xx,3)); bottom_med_pres = nanmedian(M(xx,1));
+        bottom_med_GPS_alt = nanmedian(M(xx,5));
+        % There is a chance that the radar system wasn't working at the
+        % same time as the NO2 measurments, so if there were no
+        % corresponding radar measurements in the lowest part of the
+        % column, take whatever lowest 10 are available.
+        if isnan(bottom_med_radar_alt);
+            yy = find(~isnan(M(:,3)),10,'last');
+            bottom_med_radar_alt = nanmedian(M(yy,3)); bottom_med_GPS_alt = nanmedian(M(yy,5));
+            q_flag = bitset(q_flag,6,1);
+        end
+        % If the radar altitude is now a valid number, use it to get
+        % the surface pressure.  Otherwise, use the GLOBE database and
+        % find the nearest surface altitude, which must be converted to
+        % kilometers
+        if ~isnan(bottom_med_radar_alt)
+            surface_alt = bottom_med_GPS_alt-bottom_med_radar_alt; surface_pres = 1013*exp(-surface_alt/7.4);
+        else
+            if DEBUG_LEVEL > 0; fprintf('  Retrieving GLOBE surface altitude.  May take a second...\n'); end
+            surface_alt = nearest_GLOBE_alt(nanmean(lon_array{p}), nanmean(lat_array{p}))/1000;
+            surface_pres = 1013*exp(-surface_alt/7.4);
+            q_flag = bitset(q_flag,7,1);
+        end
         
         if sum(~isnan(no2_array{p}))/numel(no2_array{p}) < 0.1
             q_flag = bitset(q_flag,4,1); % Set the 4th bit as a flag if less than 10% of the data points are non-fill values

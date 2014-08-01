@@ -66,7 +66,7 @@ for d=1:numel(dates)
     
     for swath=1:numel(Data)
         S=S+1;
-        [lon_radrowanyvza{S}, lat_radrowanyvza{S}, omino2_radrowanyvza{S}, behrno2_radrowanyvza{S}, airno2_radrowanyvza{S}, db(S)] = spiral_verification_avg_pix2prof(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'cloud_product','rad','cloud_frac',0.5,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield,'rowanomaly','RowsByTime','clean',~debugreject);
+        [lon_1_anyvza_{S}, lat_1_anyvza_{S}, omino2_1_anyvza_{S}, behrno2_1_anyvza_{S}, airno2_1_anyvza_{S}, db(S)] = spiral_verification_avg_pix2prof(Merge,Data(swath),tz,'DEBUG_LEVEL',1,'no2field',no2field,'profiles',Ranges(xx).Ranges,'cloud_product','rad','cloud_frac',0.5,'radarfield',radarfield,'altfield',altfield,'presfield',presfield,'tempfield',tempfield,'rowanomaly','RowsByTime','clean',~debugreject);
         date_list{S} = curr_date;
     end
     dummy = 1;
@@ -75,8 +75,8 @@ end
 date_list = date_list(1:S);
 
 % concatenate the output
-lon_radrowanyvzaall = cat(1,lon_radrowanyvza{:});
-lat_radrowanyvzaall = cat(1,lat_radrowanyvza{:});
-omino2_radrowanyvzaall = cat(1, omino2_radrowanyvza{:});
-behrno2_radrowanyvzaall = cat(1, behrno2_radrowanyvza{:});
-airno2_radrowanyvzaall = cat(1, airno2_radrowanyvza{:});
+lon_1_anyvza_all = cat(1,lon_1_anyvza_{:});
+lat_1_anyvza_all = cat(1,lat_1_anyvza_{:});
+omino2_1_anyvza_all = cat(1, omino2_1_anyvza_{:});
+behrno2_1_anyvza_all = cat(1, behrno2_1_anyvza_{:});
+airno2_1_anyvza_all = cat(1, airno2_1_anyvza_{:});
