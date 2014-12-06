@@ -1,3 +1,4 @@
+function read_merge_data
 % read_merge_data: reads in any merge files from flight campaigns and saves
 % a .mat file containing a data structure for a given flight.  Said data
 % structure will contain the each data set as a sub field, with fill value
@@ -121,7 +122,7 @@ for a = 1:numfiles
     % Get the description of the file for the metadata
     Merge.metadata.description = fgetl(fid); line_count = line_count + 1;
     % Create the UTC unit field
-    Merge.Data.UTC.fill = 'N/A';
+    Merge.Data.UTC.Fill = 'N/A';
     Merge.Data.UTC.Unit = 'seconds after midnight in UTC time';
     
     % Skip lines 5-6
@@ -150,9 +151,9 @@ for a = 1:numfiles
     % on the delimiter decided from the first line.
     line12 = fgetl(fid);
     if strcmpi(delim,',');
-        fill_vals = sscanf(line12,repmat('%d, ',1,numfields));
+        fill_vals = sscanf(line12,repmat('%f, ',1,numfields));
     else
-        fill_vals = sscanf(line12,repmat('%d ',1,numfields));
+        fill_vals = sscanf(line12,repmat('%f ',1,numfields));
     end
     line_count = line_count + 1;
     
@@ -167,13 +168,13 @@ for a = 1:numfiles
             unit = line((comma_pos+1):end);
         else
             field = line(1:(comma_pos-1));
-            unit = line((comma_pos+2):end);
+            unit = strtrim(line((comma_pos+1):end));
         end
         
         % Sanitize the field name, characters that don't belong in variable
         % names will be removed. Also, prepend 'f_' to any field names 
         field = regexprep(field,'\W','');
-        if ~isempty(regexp(field(1),'[^a-zA-Z]')); field = ['f_',field]; end % regexp(field,'[^a-zA-Z]','ONCE') DOES NOT WORK: this line needs to test if the first character in 'field' is not a letter.
+        if ~isempty(regexp(field(1),'[^a-zA-Z]')); field = ['f_',field]; end %#ok<RGXP1> % regexp(field,'[^a-zA-Z]','ONCE') DOES NOT WORK: this line needs to test if the first character in 'field' is not a letter.
         eval(sprintf('Merge.Data.%s.Unit = ''%s'';',field,unit))
         eval(sprintf('Merge.Data.%s.Fill = %d;',field,fill_vals(f)));
         
@@ -197,10 +198,36 @@ for a = 1:numfiles
     
     % Read in the header row
     header = cell(1,numfields+1);
+    manual_parse = 0;
+    
     for f = 1:numfields+1
-        field = fscanf(fid,'%s,');
+        % Always read in the first time, then only continue scanning the
+        % file if manual parsing is not required
+        if ~manual_parse
+            field = fscanf(fid,'%s,');
+        end
+        
+        %Header rows with commas but not spaces present a problem for
+        %fscanf.  If the field is too long, assume that it accidentally
+        %read the whole line in instead of just one field, manually parse
+        %the line and break out of the enclosing loop.
+        if length(field)>20 && ~manual_parse
+            headerline = field;
+            manual_parse = 1;
+        end
+        
+        if manual_parse;
+            delim_pos = strfind(headerline,delim);
+            if ~isempty(delim_pos)
+                field = headerline(1:delim_pos(1)-1);
+                headerline = headerline((delim_pos+1):end);
+            else %if no more delimiters left, we're at the end of line (probably)
+                field = deblank(headerline);
+            end
+        end
+        
         field = regexprep(field,'\W','');
-        if ~isempty(regexp(field(1),'[^a-zA-Z]')); field = ['f_',field]; end % regexp(field,'[^a-zA-Z]','ONCE') DOES NOT WORK: this line needs to test if the first character in 'field' is not a letter.
+        if ~isempty(regexp(field(1),'[^a-zA-Z]')); field = ['f_',field]; end %#ok<RGXP1> % regexp(field,'[^a-zA-Z]','ONCE') DOES NOT WORK: this line needs to test if the first character in 'field' is not a letter.
         header{f} = field;
     end
     
@@ -267,4 +294,5 @@ for a = 1:numfiles
         save(fullfile(save_path,savename),'Merge','header','DataTable');
         if DEBUG_LEVEL > 0; fprintf('    File saved as %s in %s\n',savename,save_path); end
     end
+end
 end

@@ -1,4 +1,4 @@
-%combine_merge_files
+function combine_merge_files
 %
 %   Allows manual combination of .mat files resulting from
 %   read_merge_data.m. Combines two file sets at a time, to combine more
@@ -6,29 +6,35 @@
 %   output with the next file.  The first file chosen should probably be
 %   the NAV data file.
 
+lonfields = {'FMS_LON','Longitude'};
+latfields = {'FMS_LAT','Latitude'};
+
 save_unmatched = false;
 DEBUG_LEVEL = 2;
-% mat_dir_1 = uigetdir('/Volumes','Select the directory with the first set of merge files in it');
-% fprintf('Will read .mat file set 1 from %s\n',mat_dir_1);
-% mat_dir_2 = uigetdir('/Volumes','Select the directory with the second set of merge files in it');
-% fprintf('Will read .mat file set 2 from %s\n',mat_dir_2);
-% save_path = uigetdir('/Volumes','Select the directory to save the resulting .mat files to');
-% fprintf('Will save mat files to %s\n',save_path);
-% save_bool = 1;
-% if all(mat_dir_1 == 0) || all(mat_dir_2 == 0) || all(save_path == 0); error('read_merge_data:user_cancel','User canceled run.'); end
-% 
-% savetitle = sprintf('Enter the save file name. This will preceed the data date.');
-% user_savename = inputdlg(savetitle); user_savename = user_savename{1};
-% if isempty(user_savename) 
-%     error('read_merge_data:user_cancel','User cancelled run');
-% elseif ~strcmp(user_savename(end),'_');
-%     user_savename = [user_savename,'_'];
-% end
+mat_dir_1 = uigetdir('/Volumes','Select the directory with the first set of merge files in it');
+fprintf('Will read .mat file set 1 from %s\n',mat_dir_1);
+mat_dir_2 = uigetdir('/Volumes','Select the directory with the second set of merge files in it');
+fprintf('Will read .mat file set 2 from %s\n',mat_dir_2);
+save_path = uigetdir('/Volumes','Select the directory to save the resulting .mat files to');
+fprintf('Will save mat files to %s\n',save_path);
+save_bool = 1;
+if all(mat_dir_1 == 0) || all(mat_dir_2 == 0) || all(save_path == 0); error('read_merge_data:user_cancel','User canceled run.'); end
 
-mat_dir_1 = '/Volumes/share/GROUP/INTEX-B/Unmerged files/Nav files/Matlab/';
-mat_dir_2 = '/Volumes/share/GROUP/INTEX-B/Unmerged files/Cohen-NO2 files/Matlab2/';
-save_path = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
-user_savename = 'INTEXB_';
+savetitle = sprintf('Enter the save file name. This will preceed the data date.');
+user_savename = inputdlg(savetitle); user_savename = user_savename{1};
+if isempty(user_savename) 
+    error('read_merge_data:user_cancel','User cancelled run');
+elseif ~strcmp(user_savename(end),'_');
+    user_savename = [user_savename,'_'];
+end
+
+% mat_dir_1 = '/Volumes/share/GROUP/INTEX-B/Unmerged files/Nav files/Matlab/';
+% mat_dir_2 = '/Volumes/share/GROUP/INTEX-B/Unmerged files/Cohen-NO2 files/Matlab2/';
+% save_path = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
+% user_savename = 'INTEXB_';
+
+% Flag to know whether to fix the order of the fields
+lonflag = 0;
 
 merge_files_1 = dir(fullfile(mat_dir_1,'*.mat'));
 merge_files_2 = dir(fullfile(mat_dir_2,'*.mat'));
@@ -142,6 +148,18 @@ for a=1:numel(datenums_1);
                 eval(sprintf('newMerge.Data.%s.Values(~fills) = newMerge.Data.%s.Values(~fills)/1000;',fields1{n},fields1{n}))
                 eval(sprintf('newMerge.Data.%s.Unit = ''km'';',fields1{n}));
             end
+            % If the field is a latitude or longitude field rename it to
+            % LATITUDE or LONGITUDE for consitency.  The any() statement is
+            % in place to allow easy expansion of the fields to rename.
+            if any(strcmp(lonfields,fields1{n}))
+                lonflag=1;
+                newMerge.Data.LONGITUDE = newMerge.Data.(fields1{n});
+                newMerge.Data = rmfield(newMerge.Data,fields1{n});
+            end
+            if any(strcmp(latfields,fields1{n}))
+                newMerge.Data.LATITUDE = newMerge.Data.(fields1{n});
+                newMerge.Data = rmfield(newMerge.Data,fields1{n});
+            end
         end
     end
     
@@ -187,8 +205,30 @@ for a=1:numel(datenums_1);
                 eval(sprintf('newMerge.Data.%s.Values(~fills) = newMerge.Data.%s.Values(~fills)/1000;',myname,myname))
                 eval(sprintf('newMerge.Data.%s.Unit = ''km'';',myname));
             end
+            % If the field is a latitude or longitude field rename it to
+            % LATITUDE or LONGITUDE for consitency.  The any() statement is
+            % in place to allow easy expansion of the fields to rename.
+            if any(strcmp(lonfields,fields2{n}))
+                lonflag=1;
+                newMerge.Data.LONGITUDE = newMerge.Data.(fields2{n});
+                newMerge.Data = rmfield(newMerge.Data,fields2{n});
+            end
+            if any(strcmp(latfields,fields2{n}))
+                newMerge.Data.LATITUDE = newMerge.Data.(fields2{n});
+                newMerge.Data = rmfield(newMerge.Data,fields2{n});
+            end
         end
     end
+    % If the lat/lon fields were renamed, reorder the fields so that they
+    % are 2nd and 3rd (assuming UTC is the first field
+    if lonflag
+        fieldlist = fieldnames(newMerge.Data);
+        xx = strcmp(fieldlist,'LATITUDE') | strcmp(fieldlist, 'LONGITUDE');
+        fieldlist(xx) = [];
+        fieldlist = [fieldlist(1); {'LATITUDE';'LONGITUDE'}; fieldlist(2:end)];
+        newMerge.Data = orderfields(newMerge.Data,fieldlist);
+    end
+    
     % Convert longitude into the [0 360] representation
     if DEBUG_LEVEL > 1; fprintf('      Converting longitude to [0 360] representation\n'); end
     newMerge.Data.LONGITUDE.Values = mod(newMerge.Data.LONGITUDE.Values,360);
@@ -197,4 +237,6 @@ for a=1:numel(datenums_1);
     Merge = newMerge;
     save(fullfile(save_path,sprintf('%s_%s_%s_%s.mat',user_savename,year,month,day)),'Merge');
     clear('newMerge'); clear('Merge');
+end
+
 end

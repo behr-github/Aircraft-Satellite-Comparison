@@ -92,6 +92,10 @@ else
     bl_height = S(xx,3) + 0.5*binwidth;
 end
 
+%Added on 7 Aug 2014 to prevent an empty matrix assignation error in the
+%select_BL_heights gui.
+if isempty(bl_height); bl_height = NaN;
+
 if DEBUG;
     nfig = nextfig; figure(nfig);
     plot(vals, altitude);

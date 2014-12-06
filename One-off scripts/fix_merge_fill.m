@@ -4,7 +4,7 @@
 %   for the UTC field, which messes things up in other scripts.  This will
 %   correct that for.
 
-merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
+merge_dir = '/Volumes/share/GROUP/ARCTAS/Matlab Files/';
 merge_file_pattern = '*.mat';
 DEBUG_LEVEL = 2;
 

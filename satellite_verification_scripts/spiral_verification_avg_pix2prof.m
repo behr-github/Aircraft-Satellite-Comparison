@@ -52,21 +52,26 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %           overpass
 %       9th: No BEHR data for this swath (probably used an OMI_SP only
 %           file)
-%       10th: The average OMI terrain pressure is less than the second
-%           pressure bin
-%       11-15: Unused
+%       10-15: Unused
 %       16th: Set if the column was skipped due to < 1% valid
 %           NO2, pressure, or temperature data
 %
 %   Parameters:
 %
-%   profiles: Allows the user to pass either (1) the name of
-%   the field containing profile ID numbers in the Merge structure, or(2)
-%   an (n x 2) matrix containing the start and stop times (in seconds after
-%   midnight UTC) of the periods during the flight when the aircraft is
-%   sprialing.  The first is useful if the profile numbers field is not
-%   recognized by this function; the second is useful for campaigns such as
-%   ARCTAS-CA that do not identify spirals.
+%   profiles: Allows the user to pass either (1) the name of the field
+%   containing profile ID numbers in the Merge structure, (2) an (n x 2)
+%   matrix containing the start and stop times (in seconds after midnight
+%   UTC) of the periods during the flight when the aircraft is sprialing,
+%   or (3) a vector with specific profile numbers to examine.  The first is
+%   useful if the profile numbers field is not recognized by this function;
+%   the second is useful for campaigns such as ARCTAS-CA that do not
+%   identify spirals.  The third is useful to only compare certain
+%   profiles, i.e. ones that have already been filtered by some other
+%   criteria.
+%
+%   behrfield: What field to use for BEHR NO2 data. Defaults to
+%   BEHRColumnAmountNO2Trop, but can be reset to, for example, use
+%   reprocessed columns using in-situ AMFs.
 %
 %   starttime: Profiles must have a start time later that this. Pass as a
 %   string using military time, e.g. 16:00 instead of 4:00 pm.  This is
@@ -89,6 +94,11 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   presfield: Defaults to PRESSURE.
 %
 %   tempfield: Defaults to TEMPERATURE.
+%
+%   aerfield: If set to 1 (default) will try to figure out the aerosol
+%   extinction field based on the dates given. If set to 0, will not return
+%   aerosol data. If set to a string, will use that string as the field
+%   name.
 %
 %   cloud_product: Which cloud product (omi or modis or rad) to use in rejecting
 %   pixels.  Defaults to omi.  
@@ -114,14 +124,17 @@ p = inputParser;
 p.addRequired('Merge',@isstruct);
 p.addRequired('Data',@isstruct);
 p.addRequired('timezone', @(x) any(strcmpi(x,{'est','cst','mst','pst','auto'})));
+p.addParamValue('behrfield','BEHRColumnAmountNO2Trop',@isstr);
 p.addParamValue('starttime','10:45',@isstr);
 p.addParamValue('endtime','16:45',@isstr);
 p.addParamValue('profiles',[], @(x) size(x,2)==2 || ischar(x));
+p.addParamValue('profnums',[], @isvector);
 p.addParamValue('no2field','',@isstr);
 p.addParamValue('altfield','ALTP',@isstr);
 p.addParamValue('radarfield','',@isstr);
 p.addParamValue('presfield','PRESSURE',@isstr);
 p.addParamValue('tempfield','TEMPERATURE',@isstr)
+p.addParamValue('aerfield',1, @(x) (x==1 || x==0 || ischar(x)));
 p.addParamValue('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis','rad'})));
 p.addParamValue('cloud_frac_max',0.2, @isscalar);
 p.addParamValue('rowanomaly','AlwaysByRow',@(x) any(strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'})));
@@ -137,13 +150,16 @@ if numel(Data)>1; error('bdy_layer_verify:DataInput','Only pass one top-level el
 Merge = pout.Merge;
 Data = pout.Data;
 tz = pout.timezone;
+behrfield = pout.behrfield;
 starttime = pout.starttime;
 endtime = pout.endtime;
 profiles = pout.profiles;
+user_profnums = pout.profnums;
 no2field = pout.no2field;
 altfield = pout.altfield;
 radarfield = pout.radarfield;
 presfield = pout.presfield;
+aerfield = pout.aerfield;
 Tfield = pout.tempfield;
 cloud_prod = pout.cloud_product;
 cloud_frac_max = pout.cloud_frac_max;
@@ -152,6 +168,10 @@ DEBUG_LEVEL = pout.DEBUG_LEVEL;
 clean_bool = pout.clean;
 
 merge_datenum = datenum(Merge.metadata.date);
+
+% Many of the errors in this script have not been updated yet to use the
+% new error class.  
+E = JLLErrors;
 
 if isempty(profiles)
     spiral_mode = 'profnum';
@@ -170,6 +190,24 @@ elseif ischar(profiles)
 elseif ismatrix(profiles);
     spiral_mode = 'utcranges';
     Ranges = profiles;
+end
+
+% Set an aerosol fieldname if the user has elected to do this
+% automatically.
+if aerfield == 1
+    if merge_datenum >= datenum('07/01/2011') && merge_datenum <= datenum('07/31/2011');
+         aerfield = 'EXTamb532'; % DISCOVER-AQ in Baltimore
+    elseif merge_datenum >= datenum('01/16/2013') && merge_datenum <= datenum('02/06/2013');
+         aerfield = 'EXTamb532_TSI_PSAP'; % DISCOVER-AQ in CA
+    elseif merge_datenum >= datenum('09/04/2013') && merge_datenum <= datenum('09/29/2013');
+         aerfield = 'EXT532nmamb_total_LARGE'; % DISCOVER-AQ in Texas
+    else
+        error('sprial_ver:aerfield','Aerosol fied not identified. Pass an aerosol extinction field name as the parameter ''aerfield'' or pass a 0 to disable aerosol measurement entirely.');
+    end
+end
+
+if ~isempty(user_profnums) && ~strcmp(spiral_mode,'profnum')
+    warning('User defined profile names are present, but function is not using profile numbers to separate data');
 end
 
 if isempty(no2field)
@@ -208,6 +246,7 @@ pres = remove_merge_fills(Merge,presfield,'alt',altfield);
 temperature = remove_merge_fills(Merge,Tfield,'alt',altfield);
 altfill = eval(sprintf('Merge.Data.%s.Fill',altfield));
 alt(alt==altfill) = NaN; % Switching to GPS altitude gave fill values for altitude.  These must be removed.
+aer_data = remove_merge_fills(Merge,aerfield);
 
 
 % If the timezone was set to "auto," calculate the difference from UTC
@@ -245,6 +284,7 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     db.all_behr = {NaN};
     db.quality_flags = {uint16(2^15+1)};
     db.coverage_fraction = {NaN};
+    db.dist_vectors = {NaN};
     db.loncorn = {NaN(4,1)};
     db.latcorn = {NaN(4,1)};
     db.strat_NO2 = {NaN};
@@ -252,9 +292,10 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     if strcmp(spiral_mode,'profnum'); db.profnums = {NaN};
     else db.profnums = {NaN(1,2)};
     end
-    db.reject = uint8(2);
+    db.reject = {uint8(2)};
     db.lon_3km = {NaN};
     db.lat_3km = {NaN};
+    if aerfield ~= 0; db.aer_max_out = {NaN}; end
 else
     if percent_nans > 0.9;
         warning('Merge file for %s has %.0f%% NO2 values as NaNs',datestr(merge_datenum,2),percent_nans*100);
@@ -280,6 +321,7 @@ else
         db.all_behr = {NaN};
         q_base = bitset(q_base,1,1); db.quality_flags = {bitset(q_base,8,1)};
         db.coverage_fraction = {NaN};
+        db.dist_vectors = {NaN};
         db.loncorn = {NaN(4,1)};
         db.latcorn = {NaN(4,1)};
         db.strat_NO2 = {NaN};
@@ -287,9 +329,10 @@ else
         if strcmp(spiral_mode,'profnum'); db.profnums = {NaN};
         else db.profnums = {NaN(1,2)};
         end
-        db.reject = uint8(2);
+        db.reject = {uint8(2)};
         db.lon_3km = {NaN};
         db.lat_3km = {NaN};
+        if aerfield ~= 0; db.aer_max_out = {NaN}; end
         return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
@@ -343,12 +386,22 @@ else
         yy = start_times >= local2utc(starttime,tz) & start_times <= local2utc(endtime,tz);
         unique_profnums = unique_profnums(yy); start_times = start_times(yy);
         
+        % If the user passed a list of profile numbers, remove any profile
+        % numbers that do not match the list provided.
+        if ~isempty(user_profnums)
+            tmp = true(size(unique_profnums));
+            for a = 1:numel(unique_profnums)
+                tmp(a) = any(unique_profnums(a)==user_profnums);
+            end
+            unique_profnums(~tmp) = [];
+        end
+        
         % Save each profile's NO2, altitude, radar altitude, latitude, and
         % longitude as an entry in a cell array
         s = size(unique_profnums);
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
         lat_array = cell(s); lon_array = cell(s); profnum_array = cell(s);
-        pres_array = cell(s); temp_array = cell(s);
+        pres_array = cell(s); temp_array = cell(s); aer_array = cell(s);
         for a=1:numel(unique_profnums)
             xx = profnum == unique_profnums(a);
             no2_array{a} = no2(xx);
@@ -358,6 +411,7 @@ else
             lon_array{a} = lon(xx);
             pres_array{a} = pres(xx);
             temp_array{a} = temperature(xx);
+            if aerfield ~= 0; aer_array{a} = aer_data(xx); end
             profnum_array{a} = unique_profnums(a);
         end
     elseif strcmp(spiral_mode,'utcranges')
@@ -367,7 +421,7 @@ else
         ranges_in_time = Ranges(yy,:);
         s = [1,sum(yy)];
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
-        lat_array = cell(s); lon_array = cell(s);
+        lat_array = cell(s); lon_array = cell(s); aer_array = cell(s);
         pres_array = cell(s); temp_array = cell(s); profnum_array = cell(s);
         for a=1:s(2)
             xx = utc >= ranges_in_time(a,1) & utc <= ranges_in_time(a,2);
@@ -378,6 +432,7 @@ else
             lon_array{a} = lon(xx);
             pres_array{a} = pres(xx);
             temp_array{a} = temperature(xx);
+            if aerfield ~= 0; aer_array{a} = aer_data(xx); end
             profnum_array{a} = ranges_in_time(a,:);
         end
     end
@@ -407,7 +462,7 @@ else
     TerrainPres = Data2.TerrainPressure(xx); %load terrain pressure (in hPa)
     % Try to load the BEHR column, if it is a field in the Data structure
     try
-        behr_no2 = Data2.BEHRColumnAmountNO2Trop(xx);
+        behr_no2 = Data2.(behrfield)(xx);
     catch err
         % If not, fill the imported variable with fill values
         if strcmp(err.identifier,'MATLAB:nonExistentField')
@@ -451,10 +506,13 @@ else
     behr_no2_out = -9e9*ones(n,1);
     air_no2_out = -9e9*ones(n,1);
     
+    
+    
     db.all_omi = cell(n,1);
     db.all_behr = cell(n,1);
     db.quality_flags = cell(n,1);
     db.coverage_fraction = cell(n,1);
+    db.dist_vectors = cell(n,1);
     db.loncorn = cell(n,1);
     db.latcorn = cell(n,1);
     db.strat_NO2 = cell(n,1);
@@ -463,7 +521,7 @@ else
     db.reject = cell(n,1);
     db.lon_3km = cell(n,1);
     db.lat_3km = cell(n,1);
-    
+    if aerfield ~= 0; db.aer_max_out = cell(n,1); end
     
     % Also, define Avogadro's number and gas constant;
     Av = 6.022e23; % molec. / mol
@@ -553,6 +611,16 @@ else
         tropopause_p = tropopause_p(pix_xx); vza_p = vza_p(pix_xx);
         modis_cloud_p = modis_cloud_p(pix_xx); total_omi_no2_p = total_omi_no2_p(pix_xx);
         pix_coverage = pix_coverage(pix_xx); terrain_pres_p = terrain_pres_p(pix_xx);
+        
+        % Calculate the distance vector between the mean lat/lon of the
+        % lowest 3 km of the profile and each pixel left.  This can be used
+        % later for weighting.
+        dist_vectors = zeros(size(omi_lat_p));
+        prof_latlon = [nanmean(lon_3km), nanmean(lat_3km)];
+        for a=1:numel(dist_vectors)
+            omi_latlon = [omi_lon_p(a), omi_lat_p(a)]; 
+            dist_vectors(a) = norm((prof_latlon - omi_latlon));
+        end
         
         % Bin the NO2 data by pressure.
         [no2bins, presbins] = bin_omisp_pressure(pres_array{p}, no2_array{p});
@@ -733,6 +801,16 @@ else
         behr_no2_out(p) = nanmean(behr_no2_p);
         air_no2_out(p) = no2_column;
         
+        % Bin the aerosol data for this profile and find the max extinction
+        % value.
+        if aerfield ~= 0;
+            [aerbins] = bin_omisp_pressure(pres_array{p}, aer_array{p});
+            aer_max = max(aerbins);
+            if isempty(aer_max);
+                aer_max = -9e9;
+            end
+        end
+        
         % If any bits in the quality flag are set, set the summary
         % bit; then append the quality flag to all those for this pixel
         if any(q_flag); q_flag = bitset(q_flag,1,1); end
@@ -741,6 +819,7 @@ else
         db.all_behr{p} = behr_no2_p;
         db.quality_flags{p} = q_flag;
         db.coverage_fraction{p} = pix_coverage;
+        db.dist_vectors{p} = dist_vectors;
         db.latcorn{p} = latcorn_p;
         db.loncorn{p} = loncorn_p;
         db.strat_NO2{p} = total_omi_no2_p - omi_no2_p;
@@ -749,6 +828,7 @@ else
         db.reject{p} = pix_reject;
         db.lon_3km{p} = lon_3km;
         db.lat_3km{p} = lat_3km;
+        if aerfield ~= 0; db.aer_max_out{p} = aer_max; end
         
     end % End the loop over all profiles
 
@@ -765,6 +845,7 @@ else
         db.all_behr = db.all_behr(~fills);
         db.quality_flags = db.quality_flags(~fills);
         db.coverage_fraction = db.coverage_fraction(~fills);
+        db.dist_vectors = db.dist_vectors(~fills);
         db.latcorn = db.latcorn(~fills);
         db.loncorn = db.loncorn(~fills);
         db.strat_NO2 = db.strat_NO2(~fills);
@@ -773,6 +854,7 @@ else
         db.reject = db.reject(~fills);
         db.lon_3km = db.lon_3km(~fills);
         db.lat_3km = db.lat_3km(~fills);
+        if aerfield ~= 0; db.aer_max_out = db.aer_max_out(~fills); end
     end
 end
 end

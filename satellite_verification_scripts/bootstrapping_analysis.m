@@ -78,7 +78,7 @@ for a=1:number_of_trials
     for b=1:count
         ri = randi([1, size(M_set,1)],1);
         x_set(b) = M_set(ri,1); y_set(b) = M_set(ri,2);
-        if replacement < 1; M_set(b,:) = []; end
+        if replacement < 1; M_set(ri,:) = []; end
     end
     
     switch fit_type

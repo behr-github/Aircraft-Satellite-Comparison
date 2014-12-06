@@ -3,10 +3,10 @@
 % altitude GUI and save the returned UTC ranges in a structure for that
 % campaign.
 
-start_date = '03/01/2006';
-end_date = '05/31/2006';
+start_date = '05/18/2012';
+end_date = '06/22/2012';
 
-mat_dir = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
+mat_dir = '/Volumes/share/GROUP/DC3/Matlab files/';
 
 R = 0;
 datenums = datenum(start_date):datenum(end_date);

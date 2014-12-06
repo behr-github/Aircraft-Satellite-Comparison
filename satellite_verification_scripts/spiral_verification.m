@@ -84,7 +84,7 @@ function [ omi_lon_out, omi_lat_out, omi_no2_out, behr_no2_out, air_no2_out, db 
 %
 %   tempfield: Defaults to TEMPERATURE.
 %
-%   cloud_product: Which cloud product (omi or modis) to use in rejecting
+%   cloud_product: Which cloud product (omi, modis, or rad) to use in rejecting
 %   pixels.  Defaults to omi.
 %
 %   cloud_frac_max: The maximum allowed geometric cloud fraction.  Defaults
@@ -115,9 +115,9 @@ p.addParamValue('altfield','ALTP',@isstr);
 p.addParamValue('radarfield','',@isstr);
 p.addParamValue('presfield','PRESSURE',@isstr);
 p.addParamValue('tempfield','TEMPERATURE',@isstr)
-p.addParamValue('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis'})));
+p.addParamValue('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis','rad'})));
 p.addParamValue('cloud_frac_max',0.2, @isscalar);
-p.addParamValue('rowanomaly','AlwaysByRow',@(x) strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'}));
+p.addParamValue('rowanomaly','AlwaysByRow',@(x) any(strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'})));
 p.addParamValue('DEBUG_LEVEL',1,@isscalar);
 p.addParamValue('clean',1,@isscalar);
 
@@ -235,15 +235,18 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     behr_no2_out = NaN;
     air_no2_out = NaN;
     
-    db.all_profiles = NaN;
-    db.coverage_fraction = NaN;
-    db.quality_flags = uint16(2^15+1);
-    db.loncorn = NaN(4,1);
-    db.latcorn = NaN(4,1);
-    db.strat_NO2 = NaN;
-    db.modis_cloud = NaN;
-    db.profnums = NaN;
-    db.reject = NaN;
+    db.all_profiles = {NaN};
+    db.quality_flags = {uint16(2^15+1)};
+    db.coverage_fraction = {NaN};
+    db.dist_vectors = {NaN};
+    db.loncorn = {NaN(4,1)};
+    db.latcorn = {NaN(4,1)};
+    db.strat_NO2 = {NaN};
+    db.modis_cloud = {NaN};
+    if strcmp(spiral_mode,'profnum'); db.profnums = {NaN};
+    else db.profnums = {NaN(1,2)};
+    end
+    db.reject = uint8(2);
 else
     if percent_nans > 0.9;
         warning('Merge file for %s has %.0f%% NO2 values as NaNs',datestr(merge_datenum,2),percent_nans*100);
@@ -265,15 +268,18 @@ else
         behr_no2_out = NaN;
         air_no2_out = NaN;
         
-        db.all_profiles = NaN;
-        db.coverage_fraction = NaN;
-        q_base = bitset(q_base,1,1); db.quality_flags = bitset(q_base,8,1);
-        db.loncorn = NaN(4,1);
-        db.latcorn = NaN(4,1);
-        db.strat_NO2 = NaN;
-        db.modis_cloud = NaN;
-        db.profnums = NaN;
-        db.reject = NaN;
+        db.all_profiles = {NaN};
+        q_base = bitset(q_base,1,1); db.quality_flags = {bitset(q_base,8,1)};
+        db.coverage_fraction = {NaN};
+        db.dist_vectors = {NaN};
+        db.loncorn = {NaN(4,1)};
+        db.latcorn = {NaN(4,1)};
+        db.strat_NO2 = {NaN};
+        db.modis_cloud = {NaN};
+        if strcmp(spiral_mode,'profnum'); db.profnums = {NaN};
+        else db.profnums = {NaN(1,2)};
+        end
+        db.reject = uint8(2);
         return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
@@ -362,7 +368,7 @@ else
             lon_array{a} = lon(xx);
             pres_array{a} = pres(xx);
             temp_array{a} = temperature(xx);
-            profnum_array{a} = Ranges(a,:);
+            profnum_array{a} = ranges_in_time(a,:);
         end
     end
     
@@ -376,7 +382,7 @@ else
         Data2 = omi_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
     catch err;
         if strcmp(err.identifier,'MATLAB:nonExistentField');
-            Data2 = omi_sp_pixel_reject(Data,cloud_frac_max,rowanomaly);
+            Data2 = omi_sp_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
         else
             rethrow(err)
         end
@@ -388,6 +394,7 @@ else
     omi_no2 = Data2.ColumnAmountNO2Trop(xx);
     TropopausePres = Data2.TropopausePressure(xx);
     vza = Data2.ViewingZenithAngle(xx);
+    TerrainPres = Data2.TerrainPressure(xx); %load terrain pressure (in hPa)
     % Try to load the BEHR column, if it is a field in the Data structure
     try
         behr_no2 = Data2.BEHRColumnAmountNO2Trop(xx);
@@ -412,7 +419,7 @@ else
         % had anything entered), fill with import variable with fill
         % values.
         if strcmp(err.identifier,'MATLAB:nonExistentField') || (strcmp(err.identifier,'MATLAB:badsubscript') && isempty(Data2.MODISCloud)) || (strcmp(err.identifier,'MATLAB:badsubscript') && numel(Data2.MODISCloud) == 1 && Data2.MODISCloud == 0)
-            if DEBUG_LEVEL > 0; fprintf('    No BEHR data for this swath\n'); end
+            if DEBUG_LEVEL > 0; fprintf('    No MODIS data for this swath\n'); end
             q_base = bitset(q_base,9,1);
             modis_cloud = -127*ones(size(xx));
         else
@@ -437,14 +444,15 @@ else
     air_no2_out = -9e9*ones(npix,1);
     
     db.all_profiles = cell(npix,1);
-    db.coverage_fraction = cell(npix,1);
     db.quality_flags = cell(npix,1);
-    db.loncorn = -9e9*ones(4,npix);
-    db.latcorn = -9e9*ones(4,npix);
-    db.strat_NO2 = -9e9*ones(npix,1);
-    db.modis_cloud = -9e9*ones(npix,1);
+    db.coverage_fraction = cell(npix,1);
+    db.dist_vectors = cell(npix,1);
+    db.loncorn = cell(npix,1);
+    db.latcorn = cell(npix,1);
+    db.strat_NO2 = cell(npix,1);
+    db.modis_cloud = cell(npix,1);
     db.profnums = cell(npix,1);
-    db.reject = uint8(zeros(npix,1));
+    db.reject = cell(n,1);
     
     
     % Also, define Avogadro's number and gas constant;
@@ -471,7 +479,7 @@ else
         % spirals to pixels
         if any(abs(loncorn_p)>179) && abs(mean(sign(loncorn_p))) ~= 1
             pix_reject = bitset(pix_reject,4);
-            db.reject(pix) = pix_reject;
+            db.reject{pix} = pix_reject;
             if ~clean_bool
                 omi_lon_out(pix) = omi_lon_p;
                 omi_lat_out(pix) = omi_lat_p;
@@ -482,7 +490,7 @@ else
         % Check the vza
         if vza_p > 60; 
             pix_reject = bitset(pix_reject,5);
-            db.reject(pix) = pix_reject;
+            db.reject{pix} = pix_reject;
             if ~clean_bool
                 omi_lon_out(pix) = omi_lon_p;
                 omi_lat_out(pix) = omi_lat_p;
@@ -492,7 +500,7 @@ else
         
         % Initialize matrices to hold values that will be returned per
         % profile
-        pix_aircraft_no2 = []; pix_coverage = []; pix_flags = []; pix_profnums = [];
+        pix_aircraft_no2 = []; pix_coverage = []; pix_flags = []; pix_profnums = []; pix_distances = [];
         pix_q_flag = q_base;
         % Check if any profiles have any part within this pixel, if so,
         % integrate that profile and average the column value to the pixel
@@ -683,6 +691,11 @@ else
             % Append the profnum number so that this can be used for
             % counting the number of profiles found
             pix_profnums = [pix_profnums; profnum_array{p}];
+            
+            % Calculate the distance from the mean of the boundary layer
+            % part of the profile to the pixel center
+            vec = [omi_lon_p - nanmean(lon_3km), omi_lat_p - nanmean(lat_3km)];
+            pix_distances(end+1) = norm(vec);
         
         end % End the loop over all profiles
         
@@ -699,14 +712,15 @@ else
         db.all_profiles{pix} = pix_aircraft_no2;
         db.quality_flags{pix} = pix_flags;
         db.coverage_fraction{pix} = pix_coverage;
-        db.latcorn(:,pix) = latcorn_p;
-        db.loncorn(:,pix) = loncorn_p;
-        db.strat_NO2(pix) = total_omi_no2_p - omi_no2_p;
-        db.modis_cloud(pix) = modis_cloud_p;
+        db.dist_vectors{pix} = pix_distances;
+        db.latcorn{pix} = latcorn_p;
+        db.loncorn{pix} = loncorn_p;
+        db.strat_NO2{pix} = total_omi_no2_p - omi_no2_p;
+        db.modis_cloud{pix} = modis_cloud_p;
         if ~isempty(pix_profnums); db.profnums{pix} = pix_profnums;
         else db.profnums{pix} = [];
         end
-        db.reject(pix) = pix_reject;
+        db.reject{pix} = pix_reject;
     
     end % End the loop over all pixels
     
@@ -720,13 +734,15 @@ else
         air_no2_out = air_no2_out(~fills);
         
         db.all_profiles = db.all_profiles(~fills);
-        db.coverage_fraction = db.coverage_fraction(~fills);
         db.quality_flags = db.quality_flags(~fills);
-        db.latcorn = db.latcorn(:,~fills);
-        db.loncorn = db.loncorn(:,~fills);
+        db.coverage_fraction = db.coverage_fraction(~fills);
+        db.dist_vectors = db.dist_vectors(~fills);
+        db.latcorn = db.latcorn(~fills);
+        db.loncorn = db.loncorn(~fills);
         db.strat_NO2 = db.strat_NO2(~fills);
         db.modis_cloud = db.modis_cloud(~fills);
         db.profnums = db.profnums(~fills);
+        db.reject = db.reject(~fills);
     end
 end
 end

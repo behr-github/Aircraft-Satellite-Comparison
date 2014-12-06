@@ -4,8 +4,8 @@
 %   The points will be colored by date to check if there is bias on certain
 %   days only.
 
-startdate = '1/16/2013';
-enddate = '2/6/2013';
+startdate = '9/01/2013';
+enddate = '9/30/2013';
 
 LIF_fieldname = 'NO2_MixingRatio_LIF';
 NCAR_fieldname = 'NO2_MixingRatio';
@@ -64,7 +64,9 @@ no2lif_all = cat(2,no2lif{1:S});
 no2ncar_all = cat(2,no2ncar{1:S});
 nans = isnan(no2lif_all) | isnan(no2ncar_all);
 no2lif_all(nans) = []; no2ncar_all(nans) = [];
-[P,R] = polyfit_R2(no2lif_all,no2ncar_all,1);
+%[P,R] = polyfit_R2(no2lif_all,no2ncar_all,1);
+[slope, int, r] = lsqfitgm(no2lif_all, no2ncar_all);
+P(1) = slope; P(2) = int; R = r^2;
 xt = get(gca,'xtick');
 lfit = line(xt,polyval(P,xt),'linewidth',2,'linestyle','--','color','k');
 l1to1 = line(xt,xt,'linewidth',2,'linestyle',':','color','r');

@@ -447,7 +447,7 @@ function done_button_Callback(hObject, eventdata, handles)
 handles.output.field1.height = nanmean(handles.field1.heights);
 handles.output.field1.qualityFlag = handles.field1.quality_flag;
 handles.output.field1.include = handles.field1.include;
-if handles.output.field3.include 
+if handles.output.field1.include 
     allheights(1) = handles.output.field1.height;
 else
     allheights(1) = NaN;
@@ -458,7 +458,7 @@ if handles.numfield > 1;
     handles.output.field2.height = nanmean(handles.field2.heights);
     handles.output.field2.qualityFlag = handles.field2.quality_flag;
     handles.output.field2.include = handles.field2.include;
-    if handles.output.field3.include 
+    if handles.output.field2.include 
         allheights(2) = handles.output.field2.height;
     else
         allheights(2) = NaN;
@@ -476,7 +476,7 @@ if handles.numfield > 2;
     else
         allheights(3) = NaN;
     end
-    allquality(3) = bitshift(uint16(handles.output.field1.qualityFlag),6);
+    allquality(3) = bitshift(uint16(handles.output.field3.qualityFlag),6);
 else
     allquality(3) = uint16(0);
 end

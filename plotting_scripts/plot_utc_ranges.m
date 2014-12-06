@@ -7,10 +7,10 @@
 %
 %   Josh Laughner <joshlaugh5@gmail.com> 24 Jul 2014
 
-range_file = '/Volumes/share/GROUP/INTEX-B/INTEXB_Profile_UTC_Ranges_Inclusive.mat';
-merge_dir = '/Volumes/share/GROUP/INTEX-B/Matlab files/';
+range_file = '/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/DISCOVER-California Altitude Ranges.mat';
+merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft';
 
-plot_field = 'ALTITUDE_GPS';
+plot_field = 'GPS_ALT';
 
 plot_map = true; % set to true to plot a map of the flight path as well
 latlim = []; % Leave these empty to automatically choose lat/lon edges for the map
