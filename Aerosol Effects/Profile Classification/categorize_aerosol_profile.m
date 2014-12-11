@@ -40,18 +40,14 @@ mag_crit = 100;
 % counted as different.
 dz = 0.25;
 
-aerosol_field = 'EXTamb532';
-aerosol_alt_field = 'FMS_ALT_PRES';
-aerosol_alt_conversion = 12 * 2.54 * 1e-5; % The navigation data merged with the aerosol data is usually given in feet; converting to km
-no2_field = 'NO2_LIF';
-no2_alt_field = 'ALTP';
-no2_alt_conversion = 1; % The navigation data provided with the NO2 merge is already in km usually
-profnum_field = 'ProfileSequenceNum';
+aerosol_field = '';
+no2_field = '';
+alt_field = '';
+alt_conversion = 1; % The navigation data provided with the NO2 merge is already in km usually
+profnum_field = '';
 
-aerosol_directory = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aerosol_Merges/Properties/';
-aerosol_file_pattern = 'Baltimore_P3*_%s_%s_%s.mat';
-NO2_directory = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
-NO2_file_pattern = 'Baltimore*_%s_%s_%s.mat';
+merge_directory = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
+merge_file_pattern = 'Baltimore*_%s_%s_%s.mat';
 
 DEBUG_LEVEL = 2;
 
@@ -60,7 +56,7 @@ DEBUG_LEVEL = 2;
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
 dates = datenum(start_date):datenum(end_date);
-first_warning_aer = 1;
+first_warning_alt_unit = 1;
 first_warning_no2 = 1;
 
 profile_struct = struct('Column_Fraction_Criterion',crit_frac,'Maximum_Magnitude_Criterion',mag_crit,'dz',dz,...
@@ -70,6 +66,31 @@ profile_struct = struct('Column_Fraction_Criterion',crit_frac,'Maximum_Magnitude
 
 E = JLLErrors;
 
+% If the field names are left empty, take a best guess at which field name
+% is to be used, based on the start date (Baltimore, CA, and TX used
+% slightly different field names)
+
+if datenum(start_date) >= datenum('7/01/2011') && datenum(start_date) <= datenum('7/31/2011')
+    if isempty(aerosol_field); aerosol_field = 'EXTamb532'; end
+    if isempty(no2_field); no2_field = 'NO2_LIF'; end
+    if isempty(alt_field); alt_field = 'GPS_ALT'; end
+    if isempty(profnum_field); profnum_field = 'ProfileSequenceNum'; end
+elseif datenum(start_date) >= datenum('1/16/2013') && datenum(start_date) <= datenum('2/06/2013')
+    if isempty(aerosol_field); aerosol_field = 'EXTamb532_TSI_PSAP'; end
+    if isempty(no2_field); no2_field = 'NO2_MixingRatio_LIF'; end
+    if isempty(alt_field); alt_field = 'GPS_ALT'; end
+    if isempty(profnum_field); profnum_field = 'ProfileNumber'; end
+elseif datenum(start_date) >= datenum('9/01/2013') && datenum(start_date) <= datenum('9/30/2013')
+    if isempty(aerosol_field); aerosol_field = 'EXT532nmamb_total_LARGE'; end
+    if isempty(no2_field); no2_field = 'NO2_MixingRatio_LIF'; end
+    if isempty(alt_field); alt_field = 'GPS_ALT'; end
+    if isempty(profnum_field); profnum_field = 'ProfileNumber'; end
+else
+    if any([isempty(aerosol_field), isempty(no2_field), isempty(alt_field), isempty(profnum_field)]);
+        E.callError('empty_fieldname','One or more field names is not specified and cannot be determined from the starting date.');
+    end
+end
+
 %%%%%%%%%%%%%%%%%%%%%
 %%%%% MAIN LOOP %%%%%
 %%%%%%%%%%%%%%%%%%%%%
@@ -77,53 +98,40 @@ E = JLLErrors;
 for d=1:numel(dates)
     % For each day, try to load the aerosol and NO2 merge files.  If one is
     % not available, skip this day
-    S_aer = wildcard_load(aerosol_directory,aerosol_file_pattern,dates(d),'Merge');
-    if isempty(S_aer);
-        if DEBUG_LEVEL > 0; fprintf('No Aerosol Merge for %s\n',datestr(dates(d))); end
-        continue
-    else
-        Merge_Aer = S_aer.Merge;
-    end
     
-    S_NO2 = wildcard_load(NO2_directory, NO2_file_pattern, dates(d));
+    S_NO2 = wildcard_load(merge_directory, merge_file_pattern, dates(d));
     if isempty(S_NO2);
         if DEBUG_LEVEL > 0; fprintf('No NO2 Merge for %s\n',datestr(dates(d))); end
         continue
     else
-        Merge_NO2 = S_NO2.Merge;
+        Merge = S_NO2.Merge;
     end
     
     % Load the day's aerosol, NO2, and altitude data
-    [ext,~,aer_alt] = remove_merge_fills( Merge_Aer, aerosol_field, 'alt', aerosol_alt_field );
-    aer_alt = aer_alt * aerosol_alt_conversion;
-    if ~strcmp('km',Merge_Aer.Data.(aerosol_field).Unit) && first_warning_aer;
-        warning('Altitude field for aerosol merge may not be in km.  Ensure correct conversion factor is being applied');
-        first_warning_aer = 0;
+    [ext,~,aer_alt] = remove_merge_fills( Merge, aerosol_field, 'alt', alt_field );
+    aer_alt = aer_alt * alt_conversion;
+    if ~strcmp('km',Merge.Data.(alt_field).Unit) && first_warning_alt_unit;
+        warning('Altitude field for merge may not be in km.  Ensure correct conversion factor is being applied');
+        first_warning_alt_unit = 0;
     end
     
-    [no2,~,no2_alt] = remove_merge_fills( Merge_NO2, no2_field, 'alt', no2_alt_field );
-    no2_alt = no2_alt * no2_alt_conversion;
-    if ~strcmp('km',Merge_NO2.Data.(no2_field).Unit) && first_warning_no2;
-        warning('Altitude field for NO2 merge may not be in km.  Ensure correct conversion factor is being applied');
-        first_warning_no2 = 0;
-    end
+    [no2,~,no2_alt] = remove_merge_fills( Merge, no2_field, 'alt', alt_field );
+    no2_alt = no2_alt * alt_conversion;
     
     % Indentify each profile present in a given day and loop through each.
     % Profile numbers of 0 indicate that the aircraft was not conducting a
     % spiral at that time and so should be removed.
-    profnums_aer = Merge_Aer.Data.(profnum_field).Values;
-    profnums_no2 = Merge_NO2.Data.(profnum_field).Values;
-    unique_profnums = unique(profnums_no2);
+    profnums = Merge.Data.(profnum_field).Values;
+    unique_profnums = unique(profnums);
     unique_profnums(unique_profnums<1) = [];
     
     for p=1:numel(unique_profnums)
         % Find the data for each profile from both merges and bin it to
         % 0.25 km bins.
-        xx_no2 = profnums_no2 == unique_profnums(p);
-        xx_aer = profnums_aer == unique_profnums(p);
+        xx = profnums == unique_profnums(p);
         
-        prof_no2 = no2(xx_no2); prof_no2_alt = no2_alt(xx_no2);
-        prof_aer = ext(xx_aer); prof_aer_alt = aer_alt(xx_aer);
+        prof_no2 = no2(xx); prof_no2_alt = no2_alt(xx);
+        prof_aer = ext(xx); prof_aer_alt = aer_alt(xx);
         
         [no2_bins, no2_bin_alt] = bin_vertical_profile(prof_no2_alt, prof_no2, 0.25);
         [aer_bins, aer_bin_alt] = bin_vertical_profile(prof_aer_alt, prof_aer, 0.25);
