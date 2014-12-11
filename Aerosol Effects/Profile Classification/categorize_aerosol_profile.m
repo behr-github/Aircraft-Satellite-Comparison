@@ -42,7 +42,7 @@ dz = 0.25;
 
 aerosol_field = '';
 no2_field = '';
-alt_field = '';
+alt_field = 'ALTP';
 alt_conversion = 1; % The navigation data provided with the NO2 merge is already in km usually
 profnum_field = '';
 
