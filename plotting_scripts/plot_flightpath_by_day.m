@@ -50,5 +50,5 @@ for a=1:S
 end
 title(sprintf('LIF vs. NCAR for %s to %s',date_start,date_end),'fontsize',16,'fontweight','bold');
 cb = colorbar;
-set(cb,'ytick',merge_datenums(1:S));
-set(cb,'yticklabel',merge_dates(1:S));
+set(cb,'Ticks',merge_datenums(1:S));
+set(cb,'TickLabels',merge_dates(1:S));

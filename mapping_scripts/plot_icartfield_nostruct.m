@@ -75,7 +75,7 @@ end
 % represent the highest pressure that would have that color.
 
 cb = colorbar;
-ticks = get(cb,'YTick'); nTicks = numel(ticks);
+ticks = get(cb,'Ticks'); nTicks = numel(ticks);
 
 % We're just going to relabel our existing ticks, so first we find our
 % colormap indices that will correspond to those ticks
@@ -89,7 +89,7 @@ for b = 1:numel(tick_indices)
     pressures{b} = num2str(round(max(tmp)));
 end
 %pressures = fliplr(pressures); % This will put the highest pressure as the lowest tick on the colorbar
-set(cb,'YTickLabel',pressures);
+set(cb,'TickLabels',pressures);
 
 end
 

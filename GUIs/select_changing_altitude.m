@@ -380,7 +380,7 @@ for a=1:size(ranges,1)
     end
     fill_x = [ranges(a,1), ranges(a,1), ranges(a,2), ranges(a,2)];
     fill_y = [plot_ylim(1), plot_ylim(2), plot_ylim(2), plot_ylim(1)];
-    fh = fill(fill_x, fill_y, fillcol,'FaceAlpha',0.4,'HitTest','off');
+    fh = fill(fill_x, fill_y, fillcol,'FaceAlpha',0.4,'PickableParts','none');
     S.fills = [S.fills, fh];
 end
 
@@ -410,7 +410,7 @@ if ok
     fills = eval(sprintf('Merge.Data.%s.Fill',fieldname));
     alt(alt==fills)=NaN;
     hold off
-    alt_line = line(utc,alt,'Parent',S.alt_plot,'color',[0 0.5 0],'HitTest','off');
+    alt_line = line(utc,alt,'Parent',S.alt_plot,'color',[0 0.5 0],'PickableParts','none');
     hold on
     S.lines.alt_line = alt_line;
     S.ylims = get(S.alt_plot,'YLim');

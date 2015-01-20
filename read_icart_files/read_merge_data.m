@@ -211,7 +211,8 @@ for a = 1:numfiles
         %fscanf.  If the field is too long, assume that it accidentally
         %read the whole line in instead of just one field, manually parse
         %the line and break out of the enclosing loop.
-        if length(field)>20 && ~manual_parse
+        %Only check this the first time; it'll either happen or it won't.
+        if length(field)>20 && ~manual_parse && f == 1;
             headerline = field;
             manual_parse = 1;
         end
@@ -226,6 +227,7 @@ for a = 1:numfiles
             end
         end
         
+        fieldsave = field;
         field = regexprep(field,'\W','');
         if ~isempty(regexp(field(1),'[^a-zA-Z]')); field = ['f_',field]; end %#ok<RGXP1> % regexp(field,'[^a-zA-Z]','ONCE') DOES NOT WORK: this line needs to test if the first character in 'field' is not a letter.
         header{f} = field;

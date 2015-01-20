@@ -555,7 +555,7 @@ if ~isempty(S_field.line_h)
     S_field.heights = [];
 end
 heights = -127*ones(size(alt_ranges,1),1);
-lines = zeros(size(alt_ranges,1),1);
+lines = gobjects(size(alt_ranges,1),1);
 if isempty(alt_ranges); 
     alt_ranges = [-Inf, Inf]; 
     S_field.quality_flag = bitset(S_field.quality_flag,2,0);
@@ -609,7 +609,7 @@ for a=1:size(ranges,1)
     end
     fill_y = [ranges(a,1), ranges(a,2), ranges(a,2), ranges(a,1)];
     fill_x = [plot_xlim(1), plot_xlim(1), plot_xlim(2), plot_xlim(2)];
-    fh = patch(fill_x, fill_y, fillcol,'FaceAlpha',0.4,'HitTest','off','Parent',S_field.axes_h);
+    fh = patch(fill_x, fill_y, fillcol,'FaceAlpha',0.4,'PickableParts','none','Parent',S_field.axes_h);
     S_field.fills = [S_field.fills, fh];
 end
 
@@ -718,7 +718,7 @@ hold(S.map_axes);
 lonlim = [floor(min(lon(:))), ceil(max(lon(:)))];
 latlim = [floor(min(lat(:))), ceil(max(lat(:)))];
 set(S.map_axes,'xlim',lonlim); set(S.map_axes,'ylim',latlim);
-cb=colorbar('peer',S.map_axes); ylabel(cb,'Altitude (km)');
+cb=colorbar(S.map_axes); ylabel(cb,'Altitude (km)');
 
 
 

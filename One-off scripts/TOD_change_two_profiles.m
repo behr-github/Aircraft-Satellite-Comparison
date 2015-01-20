@@ -103,7 +103,7 @@ colors = {'b','r',[0 0.5 0],[0.5 0 0.5]};
 %markers = {'s','^','o','v'};
 
 for d=1:numel(profiles_no2)
-    l = zeros(4,2);
+    l = gobjects(4,2);
     figure('Position',[100 100,subplotsize(2)*400,subplotsize(1)*400]);
     for h=1:4;
         dates{d} = profiles_no2(d).date;

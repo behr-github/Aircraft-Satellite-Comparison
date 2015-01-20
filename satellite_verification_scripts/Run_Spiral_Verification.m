@@ -5,12 +5,12 @@
 %
 %  Josh Laughner <joshlaugh5@gmail.com> 4 Jul 2014
 
-function Run_Spiral_Verification(profstr)
+function varargout = Run_Spiral_Verification(profnums)
 
-date_start = '01/16/2013';
-date_end = '02/06/2013';
+date_start = '07/01/2011';
+date_end = '07/31/2011';
 
-no2field = 'NO2_MixingRatio_LIF';
+no2field = 'NO2_LIF';
 altfield = 'GPS_ALT';
 
 starttime = '12:00';
@@ -22,14 +22,17 @@ tz = 'auto';
 %profnums = [2021, 2022,3023,4021,6021,8003,2023,2036,3040,4034,5041]; %shielding
 
 merge_dir = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR_REPROCESSED/';
-behr_prefix = 'OMI_BEHR_*';
+%behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR_REPROCESSED/';
+behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
+behr_prefix = 'OMI_BEHR_omi*';
 
 DEBUG_LEVEL = 0;
 
+if nargin < 1; profnums = 1:1e7; end
+
 dates = datenum(date_start):datenum(date_end);
 
-S=0; clear('dbs');
+S=0; %clear('dbs');
 for d=1:numel(dates)
     % Load the merge and BEHR files
     curr_date = datestr(dates(d),29);
@@ -63,7 +66,7 @@ for d=1:numel(dates)
     for swath=1:numel(Data)
         S=S+1;
         [lon_i{S}, lat_i{S}, omino2_i{S}, behrno2_i{S}, airno2_i{S}, dbs(S)] = spiral_verification_avg_pix2prof(Merge,Data(swath),tz,'DEBUG_LEVEL',DEBUG_LEVEL,...
-            'no2field',no2field,'altfield',altfield,'starttime',starttime,'endtime',endtime,'rowanomaly','XTrackFlags','behrfield','BEHR_R_ColumnAmountNO2Trop');%,'profnums',profnums);
+            'no2field',no2field,'altfield',altfield,'starttime',starttime,'endtime',endtime,'rowanomaly','XTrackFlags','behrfield','BEHRColumnAmountNO2Trop','profnums',profnums);
         date_cell{S} = repmat({curr_date},numel(lon_i{S}),1);
     end
 end
@@ -76,5 +79,15 @@ end
 % behrno2_iall = cat(1, behrno2_i{:});
 % airno2_iall = cat(1, airno2_i{:});
 % dates_iall = cat(1,date_cell{:});
-putvar(db_iall, lon_iall, lat_iall, omino2_iall, behrno2_iall, airno2_iall, dates_iall);
+if nargout == 0;
+    putvar(db_iall, lon_iall, lat_iall, omino2_iall, behrno2_iall, airno2_iall, dates_iall);
+else
+    varargout{1} = lon_iall;
+    varargout{2} = lat_iall;
+    varargout{3} = omino2_iall;
+    varargout{4} = behrno2_iall;
+    varargout{5} = airno2_iall;
+    varargout{6} = db_iall;
+    varargout{7} = dates_iall;
+end
 end

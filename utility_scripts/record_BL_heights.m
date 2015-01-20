@@ -23,7 +23,7 @@
 %   The heights structure will also contain the specific BL heights for
 %   each species is a substructure.
 
-merge_dir = '/Volumes/share/GROUP/ARCTAS/Matlab Files';
+merge_dir = '/Volumes/share2/USERS/LaughnerJ/CampaignMergeMats/ARCTAS-CARB/DC8/1sec';
 merge_prefix = 'ARCTAS_CA_';
 ranges_file = '/Users/Josh/Documents/MATLAB/NO2 Profiles/Workspaces/ARCTAS-CA Altitude Ranges Exclusive 3.mat';
 

@@ -27,8 +27,8 @@ function [ profile_struct ] = categorize_aerosol_profile(  )
 %%%%% USER INPUT %%%%%
 %%%%%%%%%%%%%%%%%%%%%%
 
-start_date = '7/01/2011';
-end_date = '7/31/2011';
+start_date = '9/01/2013';
+end_date = '9/31/2013';
 
 %crit_frac is the fraction of the integrated column that we look for to
 %compare heights
@@ -42,12 +42,12 @@ dz = 0.25;
 
 aerosol_field = '';
 no2_field = '';
-alt_field = 'ALTP';
+alt_field = '';
 alt_conversion = 1; % The navigation data provided with the NO2 merge is already in km usually
 profnum_field = '';
 
 merge_directory = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
-merge_file_pattern = 'Baltimore*_%s_%s_%s.mat';
+merge_file_pattern = 'Texas*_%s_%s_%s.mat';
 
 DEBUG_LEVEL = 2;
 
@@ -117,6 +117,7 @@ for d=1:numel(dates)
     
     [no2,~,no2_alt] = remove_merge_fills( Merge, no2_field, 'alt', alt_field );
     no2_alt = no2_alt * alt_conversion;
+    no2(no2<0) = NaN; % A negative concentration is clearly non-physical
     
     % Indentify each profile present in a given day and loop through each.
     % Profile numbers of 0 indicate that the aircraft was not conducting a

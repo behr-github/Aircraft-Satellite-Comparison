@@ -56,8 +56,8 @@ xlabel('NO2 LIF Mixing Ratio (pptv)','fontsize',14);
 ylabel('NO2 NCAR Mixing Ratio (pptv)','fontsize',14);
 title(sprintf('LIF vs. NCAR for %s to %s',startdate,enddate),'fontsize',16,'fontweight','bold');
 cb = colorbar;
-set(cb,'ytick',datenums(1:S));
-set(cb,'yticklabel',datestrs(1:S));
+set(cb,'Ticks',datenums(1:S));
+set(cb,'TickLabels',datestrs(1:S));
 
 % Concatenate to plot fit line
 no2lif_all = cat(2,no2lif{1:S});

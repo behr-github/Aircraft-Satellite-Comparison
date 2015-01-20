@@ -59,7 +59,7 @@ end
 
 if colorbydate
     cb = colorbar;
-    xt = get(cb,'ytick');
+    xt = get(cb,'Ticks');
     yt = datestr(xt,2);
-    set(cb,'yticklabel',yt);
+    set(cb,'TickLabels',yt);
 end

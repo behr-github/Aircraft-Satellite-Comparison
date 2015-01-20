@@ -295,7 +295,10 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     db.reject = {uint8(2)};
     db.lon_3km = {NaN};
     db.lat_3km = {NaN};
-    if aerfield ~= 0; db.aer_max_out = {NaN}; end
+    if aerfield ~= 0; 
+        db.aer_max_out = {NaN}; 
+        db.aer_int_out = {NaN};
+    end
 else
     if percent_nans > 0.9;
         warning('Merge file for %s has %.0f%% NO2 values as NaNs',datestr(merge_datenum,2),percent_nans*100);
@@ -332,7 +335,10 @@ else
         db.reject = {uint8(2)};
         db.lon_3km = {NaN};
         db.lat_3km = {NaN};
-        if aerfield ~= 0; db.aer_max_out = {NaN}; end
+        if aerfield ~= 0; 
+            db.aer_max_out = {NaN}; 
+            db.aer_int_out = {NaN};
+        end
         return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
@@ -521,7 +527,10 @@ else
     db.reject = cell(n,1);
     db.lon_3km = cell(n,1);
     db.lat_3km = cell(n,1);
-    if aerfield ~= 0; db.aer_max_out = cell(n,1); end
+    if aerfield ~= 0; 
+        db.aer_max_out = cell(n,1); 
+        db.aer_int_out = cell(n,1);
+    end
     
     % Also, define Avogadro's number and gas constant;
     Av = 6.022e23; % molec. / mol
@@ -802,13 +811,18 @@ else
         air_no2_out(p) = no2_column;
         
         % Bin the aerosol data for this profile and find the max extinction
-        % value.
+        % value and total integrated aerosol extinction.
         if aerfield ~= 0;
             [aerbins] = bin_omisp_pressure(pres_array{p}, aer_array{p});
             aer_max = max(aerbins);
             if isempty(aer_max);
                 aer_max = -9e9;
             end
+            
+            binwidth = 0.25; % km
+            [aerintbins, aerbinmid] = bin_vertical_profile(alt_array{p}, aer_array{p}, binwidth);
+            [aerbinmid, aerintbins] = fill_nans(aerbinmid,aerintbins);
+            aer_int = trapz(aerbinmid, aerintbins);
         end
         
         % If any bits in the quality flag are set, set the summary
@@ -828,7 +842,10 @@ else
         db.reject{p} = pix_reject;
         db.lon_3km{p} = lon_3km;
         db.lat_3km{p} = lat_3km;
-        if aerfield ~= 0; db.aer_max_out{p} = aer_max; end
+        if aerfield ~= 0; 
+            db.aer_max_out{p} = aer_max; 
+            db.aer_int_out{p} = aer_int;
+        end
         
     end % End the loop over all profiles
 
@@ -854,7 +871,10 @@ else
         db.reject = db.reject(~fills);
         db.lon_3km = db.lon_3km(~fills);
         db.lat_3km = db.lat_3km(~fills);
-        if aerfield ~= 0; db.aer_max_out = db.aer_max_out(~fills); end
+        if aerfield ~= 0; 
+            db.aer_max_out = db.aer_max_out(~fills); 
+            db.aer_int_out = db.aer_int_out(~fills);
+        end
     end
 end
 end
