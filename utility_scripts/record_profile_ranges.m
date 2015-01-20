@@ -22,7 +22,7 @@ if isempty(merge_dir);
 end
 
 % Add the path with the GUI in it
-addpath('/Users/Josh/Document/MATLAB/NO2 Profiles/GUIs');
+addpath('/Users/Josh/Documents/MATLAB/NO2 Profiles/GUIs');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%    MAIN LOOP    %%%%%

@@ -62,12 +62,14 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   containing profile ID numbers in the Merge structure, (2) an (n x 2)
 %   matrix containing the start and stop times (in seconds after midnight
 %   UTC) of the periods during the flight when the aircraft is sprialing,
-%   or (3) a vector with specific profile numbers to examine.  The first is
-%   useful if the profile numbers field is not recognized by this function;
-%   the second is useful for campaigns such as ARCTAS-CA that do not
-%   identify spirals.  The third is useful to only compare certain
-%   profiles, i.e. ones that have already been filtered by some other
-%   criteria.
+%   or The first is useful if the profile numbers field is not recognized
+%   by this function; the second is useful for campaigns such as ARCTAS-CA
+%   that do not identify spirals.
+%
+%   profnums: A list of specific profile numbers to examine, usually used
+%   to examine only certain profiles that have been pre-selected, for e.g.
+%   their aerosol characteristics.  Defaults to an empty matrix, which
+%   means all profiles are included.
 %
 %   behrfield: What field to use for BEHR NO2 data. Defaults to
 %   BEHRColumnAmountNO2Trop, but can be reset to, for example, use
@@ -120,26 +122,30 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %
 %   Josh Laughner <joshlaugh5@gmail.com> 25 Jul 2014
 
+
+% TODO: add a filter for profiles that can be controlled by optional
+% inputs, e.g. how close to the surface, how much breadth of altitude
+% covered, max altitude, lat/lon spread.
 p = inputParser;
 p.addRequired('Merge',@isstruct);
 p.addRequired('Data',@isstruct);
 p.addRequired('timezone', @(x) any(strcmpi(x,{'est','cst','mst','pst','auto'})));
-p.addParamValue('behrfield','BEHRColumnAmountNO2Trop',@isstr);
-p.addParamValue('starttime','10:45',@isstr);
-p.addParamValue('endtime','16:45',@isstr);
-p.addParamValue('profiles',[], @(x) size(x,2)==2 || ischar(x));
-p.addParamValue('profnums',[], @isvector);
-p.addParamValue('no2field','',@isstr);
-p.addParamValue('altfield','ALTP',@isstr);
-p.addParamValue('radarfield','',@isstr);
-p.addParamValue('presfield','PRESSURE',@isstr);
-p.addParamValue('tempfield','TEMPERATURE',@isstr)
-p.addParamValue('aerfield',1, @(x) (x==1 || x==0 || ischar(x)));
-p.addParamValue('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis','rad'})));
-p.addParamValue('cloud_frac_max',0.2, @isscalar);
-p.addParamValue('rowanomaly','AlwaysByRow',@(x) any(strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'})));
-p.addParamValue('DEBUG_LEVEL',1,@isscalar);
-p.addParamValue('clean',1,@isscalar);
+p.addParameter('behrfield','BEHRColumnAmountNO2Trop',@isstr);
+p.addParameter('starttime','10:45',@isstr);
+p.addParameter('endtime','16:45',@isstr);
+p.addParameter('profiles',[], @(x) size(x,2)==2 || ischar(x));
+p.addParameter('profnums',[], @isvector);
+p.addParameter('no2field','',@isstr);
+p.addParameter('altfield','ALTP',@isstr);
+p.addParameter('radarfield','',@isstr);
+p.addParameter('presfield','PRESSURE',@isstr);
+p.addParameter('tempfield','TEMPERATURE',@isstr)
+p.addParameter('aerfield',1, @(x) (x==1 || x==0 || ischar(x)));
+p.addParameter('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis','rad'})));
+p.addParameter('cloud_frac_max',0.2, @isscalar);
+p.addParameter('rowanomaly','AlwaysByRow',@(x) any(strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'})));
+p.addParameter('DEBUG_LEVEL',1,@isscalar);
+p.addParameter('clean',1,@isscalar);
 
 p.parse(Merge,Data,timezone,varargin{:});
 pout = p.Results;
