@@ -32,8 +32,13 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   and the fraction of spiral measurments that fall within the pixel
 %   boundary.
 %
-%   The sixth output is a 16-bit integer that is a quality flag for the
-%   column, similar to the vcdQualityFlag and XTrackFlag in the OMNO2
+%   The sixth output is a structure containing a wide range of ancillary
+%   data that might be valuable for debugging, such as individual pixel
+%   measurements, cloud fractions, etc. All fields contain cell arrays
+%   where each cell corresponds to a profile. Most fields are self
+%   explanatory, but two require some additional explanation.
+%       The quality_flags field is a 16-bit integer that is a quality flag
+%   for the column, similar to the vcdQualityFlag and XTrackFlag in the OMNO2
 %   product.  Use bitget() to check the status of individual bits; the
 %   meaning of each bit is specified here:
 %       1st: Summary, set to 1 if any flags are set.
@@ -56,7 +61,35 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %       16th: Set if the column was skipped due to < 1% valid
 %           NO2, pressure, or temperature data
 %
+%       The reject field contains more specific information on why a
+% profile or pixel was rejected.  The difference between this and the
+% quality_flags field is that the quality_flags field tries to represent
+% problems with the underlying data (and generally involves the whole merge
+% dataset), while the reject field describes reasons that a profile or the
+% pixels impinging on it were not considered for comparison.  Generally, if
+% a cell contains a matrix, each entry represents one pixel impinging on
+% the profile. It is an 8-bit integer; the bits have the following
+% meanings:
+%       1st: Profile did not reach minRadarAlt of the ground (from Hains
+%           et. al., recommended 0.5 km) 
+%       2nd: Entire profile was NaNs 
+%       3rd: Less than numBLpoints data points in the lowest 3 km (from Hains et.
+%          al., recommended number is 20).
+%       4th: No valid pixels (clouds, row anomaly) overlap profile
+%       5th: VZA for this pixel > 60 deg.
+%       6th: Profile height was too little (max(alt) - min(alt) <
+%          min_height). The required height is set with the parameter
+%          'min_height'
+%
 %   Parameters:
+%
+%   campaign_name: a string identifying the campaign, used to retrieve the
+%   appropriate field names. See merge_field_names.m in the Utils/Constants
+%   folder.  The string need only contain an identifiable campaign name,
+%   note that the Discover campaigns need the string 'discover' plus the
+%   state abbreviation.  An empty string will bypass this, note that
+%   no2field, altfield, radarfield, and aerfield will need to be set then
+%   or an error will be thrown.
 %
 %   profiles: Allows the user to pass either (1) the name of the field
 %   containing profile ID numbers in the Merge structure, (2) an (n x 2)
@@ -83,27 +116,30 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   endtime: Profiles must have a start time before this. See starttime for
 %   more details.  Set to 16:45 by default.
 %
-%   no2field: Defaults to 'NO2_LIF', if this is not the NO2 field, use this
-%   parameter to override that.
+%   no2field: If unspecified, passed an empty string, or set to 'lif' will
+%   default to the LIF (our data) field, field name determined by calling
+%   merge_field_names with the campaign name specified. If set to 'ncar',
+%   will use the NCAR chemiluminescence data. Otherwise will use the field
+%   specified by the string given.
 %
-%   altfield: Defaults to ALTP, which is the correct field for pressure
-%   altitude for DISCOVER campaigns.
+%   altfield: If unspecified or set to 'gps' uses the GPS altitude field
+%   for the campaign, if set to 'pressure', uses the pressure altitude
+%   field. Otherwise will use the field specified by the string given.
 %
-%   radarfield: Defaults to the correct radar altitude field name for a
-%   DISCOVER campaign based on the date of the merge file.  Use this field
-%   to override that selection.
+%   radarfield: If unspecified uses the default radar altitude field for
+%   the given campaign, otherwise uses the field specified by this input.
 %
 %   presfield: Defaults to PRESSURE.
 %
 %   tempfield: Defaults to TEMPERATURE.
 %
-%   aerfield: If set to 1 (default) will try to figure out the aerosol
-%   extinction field based on the dates given. If set to 0, will not return
-%   aerosol data. If set to a string, will use that string as the field
-%   name.
+%   aerfield: If set to an empty string (default) will try to figure out
+%   the aerosol extinction field based on the dates given. If set to 0,
+%   will not return aerosol data. If set to a string, will use that string
+%   as the field name.
 %
-%   cloud_product: Which cloud product (omi or modis or rad) to use in rejecting
-%   pixels.  Defaults to omi.  
+%   cloud_product: Which cloud product (omi or modis or rad) to use in
+%   rejecting pixels.  Defaults to omi.
 %
 %   cloud_frac_max: The maximum allowed geometric cloud fraction.  Defaults
 %   to 0.2; recommended value for use with MODIS cloud product is 0.
@@ -112,6 +148,17 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   Defaults to 'AlwaysByRow'.  See omi_pixel_reject or omi_rowanomaly for
 %   more information on the possible choices ('AlwaysByRow', 'RowsByTime',
 %   'XTrackFlags', and 'XTrackFlagsLight').
+%
+%   min_height: The minimum difference between the lowest and highest
+%   points in the profile. Defaults to 0, i.e. any profile height.
+%
+%   numBLpoints: The minimum number of data points (valid, not NaNs) in the
+%   lowest 3 km of the atmosphere.  Hains et. al. recommends 20, which is
+%   set as the default.
+%
+%   minRadarAlt: The altitude (in km) above the ground which the plane must
+%   go below for the profile to be used. Hains et. al. recommend 0.5 km
+%   which is the default.
 %
 %   DEBUG_LEVEL: The level of output messages to write; 0 = none, 1 =
 %   normal; 2 = verbose, 3 = (reserved), 4 = plot NO2 profiles colored by
@@ -133,17 +180,21 @@ p.addRequired('timezone', @(x) any(strcmpi(x,{'est','cst','mst','pst','auto'})))
 p.addParameter('behrfield','BEHRColumnAmountNO2Trop',@isstr);
 p.addParameter('starttime','10:45',@isstr);
 p.addParameter('endtime','16:45',@isstr);
+p.addParameter('campaign_name','',@isstr);
 p.addParameter('profiles',[], @(x) size(x,2)==2 || ischar(x));
-p.addParameter('profnums',[], @isvector);
+p.addParameter('profnums',[], @(x) isvector(x) || isempty(x));
 p.addParameter('no2field','',@isstr);
-p.addParameter('altfield','ALTP',@isstr);
+p.addParameter('altfield','',@isstr);
 p.addParameter('radarfield','',@isstr);
 p.addParameter('presfield','PRESSURE',@isstr);
 p.addParameter('tempfield','TEMPERATURE',@isstr)
-p.addParameter('aerfield',1, @(x) (x==1 || x==0 || ischar(x)));
+p.addParameter('aerfield','', @(x) (ischar(x) || x==1 || x==0) );
 p.addParameter('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis','rad'})));
 p.addParameter('cloud_frac_max',0.2, @isscalar);
 p.addParameter('rowanomaly','AlwaysByRow',@(x) any(strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'})));
+p.addParameter('min_height',0,@isscalar);
+p.addParameter('numBLpoints',20,@isscalar);
+p.addParameter('minRadarAlt',0.5,@isscalar);
 p.addParameter('DEBUG_LEVEL',1,@isscalar);
 p.addParameter('clean',1,@isscalar);
 
@@ -161,6 +212,7 @@ starttime = pout.starttime;
 endtime = pout.endtime;
 profiles = pout.profiles;
 user_profnums = pout.profnums;
+campaign_name = pout.campaign_name;
 no2field = pout.no2field;
 altfield = pout.altfield;
 radarfield = pout.radarfield;
@@ -170,74 +222,70 @@ Tfield = pout.tempfield;
 cloud_prod = pout.cloud_product;
 cloud_frac_max = pout.cloud_frac_max;
 rowanomaly = pout.rowanomaly;
+min_height = pout.min_height;
+numBLpoints = pout.numBLpoints;
+minRadarAlt = pout.minRadarAlt;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
 clean_bool = pout.clean;
 
 merge_datenum = datenum(Merge.metadata.date);
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% INITIALIZATION %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 % Many of the errors in this script have not been updated yet to use the
 % new error class.  
 E = JLLErrors;
 
+
+% As long as the campaign name isn't blank, try to get the appropriate
+% field names for the given campaign. Otherwise check that the four merge
+% fields we need are set and if not, error out.
+if ~isempty(campaign_name);
+    FieldNames = merge_field_names(campaign_name);
+elseif isempty(no2field) || isempty(altfield) || isempty(aerfield) || isempty(radarfield)
+    error(E.badinput('If no campaign is to be specified (using the parameter ''campaign_name'') then parameters no2field, altfield, radarfield, and aerfield must not be empty strings.'));
+end
+
+% Deal with the profiles or UTC range input. Set both the spiral_mode
+% string (which determines whether to use profile numbers or UTC ranges
+% later on in this function) and reads in the profile numbers or UTC ranges.
 if isempty(profiles)
     spiral_mode = 'profnum';
-    if merge_datenum >= datenum('07/01/2011') && merge_datenum <= datenum('07/31/2011');
-        profnum = Merge.Data.ProfileSequenceNum.Values; % DISCOVER-AQ in Baltimore
-    elseif merge_datenum >= datenum('01/16/2013') && merge_datenum <= datenum('02/06/2013');
-        profnum = Merge.Data.ProfileNumber.Values; % DISCOVER-AQ in CA
-    elseif merge_datenum >= datenum('09/04/2013') && merge_datenum <= datenum('09/29/2013');
-        profnum = Merge.Data.ProfileNumber.Values; % DISCOVER-AQ in Texas
-    else
-        error('sprial_ver:profnum','Profiles not identified. Pass a profile number field name or UTC time ranges as the parameter ''profiles''');
+    if isempty(FieldNames.profile_numbers)
+        error(E.callError('profile_mode','The profile numbers field is not defined for this campaign; be sure to set the calling function to use UTC ranges'));
     end
+    profnum = Merge.Data.(FieldNames.profile_numbers).Values;
 elseif ischar(profiles)
     spiral_mode = 'profnum';
-    profnum = eval(sprintf('Merge.Data.%s.Values',profiles));
+    profnum = Merge.Data.(profiles).Values;
 elseif ismatrix(profiles);
     spiral_mode = 'utcranges';
     Ranges = profiles;
 end
 
-% Set an aerosol fieldname if the user has elected to do this
-% automatically.
-if aerfield == 1
-    if merge_datenum >= datenum('07/01/2011') && merge_datenum <= datenum('07/31/2011');
-         aerfield = 'EXTamb532'; % DISCOVER-AQ in Baltimore
-    elseif merge_datenum >= datenum('01/16/2013') && merge_datenum <= datenum('02/06/2013');
-         aerfield = 'EXTamb532_TSI_PSAP'; % DISCOVER-AQ in CA
-    elseif merge_datenum >= datenum('09/04/2013') && merge_datenum <= datenum('09/29/2013');
-         aerfield = 'EXT532nmamb_total_LARGE'; % DISCOVER-AQ in Texas
-    else
-        error('sprial_ver:aerfield','Aerosol fied not identified. Pass an aerosol extinction field name as the parameter ''aerfield'' or pass a 0 to disable aerosol measurement entirely.');
-    end
+% Now for each field name not given by the user, set it from the
+% merge field names retrieved.
+if isempty(no2field) || strcmpi(no2field,'lif')
+    no2field = FieldNames.no2_lif;
+elseif strcmpi(no2field,'ncar')
+    no2field = FieldNames.no2_ncar;
 end
 
-if ~isempty(user_profnums) && ~strcmp(spiral_mode,'profnum')
-    warning('User defined profile names are present, but function is not using profile numbers to separate data');
-end
-
-if isempty(no2field)
-    if merge_datenum >= datenum('07/01/2011') && merge_datenum <= datenum('07/31/2011');
-        no2field = 'NO2_LIF';
-    elseif merge_datenum >= datenum('01/16/2013') && merge_datenum <= datenum('02/06/2013');
-        no2field = 'NO2_MixingRatio_LIF';
-    elseif merge_datenum >= datenum('09/04/2013') && merge_datenum <= datenum('09/29/2013');
-        no2field = 'NO2_MixingRatio_LIF';
-    end
+if isempty(altfield) || strcmpi(altfield,'gps')
+    altfield = FieldNames.gps_alt;
+elseif strcmpi(altfield,'pressure')
+    altfield = FieldNames.pressure_alt;
 end
 
 if isempty(radarfield)
-    if merge_datenum >= datenum('07/01/2011') && merge_datenum <= datenum('07/31/2011');
-        radarfield = 'A_RadarAlt';
-    elseif merge_datenum >= datenum('01/16/2013') && merge_datenum <= datenum('02/06/2013');
-        radarfield = 'Radar_Altitude';
-    elseif merge_datenum >= datenum('09/04/2013') && merge_datenum <= datenum('09/29/2013');
-        radarfield = 'Radar_Altitude';
-    else
-        error('sprial_ver:profnum','Radar Alt not identified. Pass a radar altitude field name as the parameter ''radarfield''');
-    end
+    radarfield = FieldNames.radar_alt;
 end
 
+if isempty(aerfield) % This will not override a 0 passed as this field.
+    aerfield = FieldNames.aerosol_extinction;
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%     LOAD DATA     %%%%%
@@ -252,11 +300,13 @@ pres = remove_merge_fills(Merge,presfield,'alt',altfield);
 temperature = remove_merge_fills(Merge,Tfield,'alt',altfield);
 altfill = eval(sprintf('Merge.Data.%s.Fill',altfield));
 alt(alt==altfill) = NaN; % Switching to GPS altitude gave fill values for altitude.  These must be removed.
-aer_data = remove_merge_fills(Merge,aerfield);
+if aerfield ~= 0
+    aer_data = remove_merge_fills(Merge,aerfield);
+end
 
 
 % If the timezone was set to "auto," calculate the difference from UTC
-% based on the mean longitude
+% based on the mean longitude. 
 if strcmpi(tz,'auto')
     tz = round(nanmean(lon)/15);
 end
@@ -304,6 +354,7 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     if aerfield ~= 0; 
         db.aer_max_out = {NaN}; 
         db.aer_int_out = {NaN};
+        db.aer_quality = {NaN};
     end
 else
     if percent_nans > 0.9;
@@ -344,6 +395,7 @@ else
         if aerfield ~= 0; 
             db.aer_max_out = {NaN}; 
             db.aer_int_out = {NaN};
+            db.aer_quality = {NaN};
         end
         return
     end
@@ -536,6 +588,7 @@ else
     if aerfield ~= 0; 
         db.aer_max_out = cell(n,1); 
         db.aer_int_out = cell(n,1);
+        db.aer_quality = cell(n,1);
     end
     
     % Also, define Avogadro's number and gas constant;
@@ -559,12 +612,18 @@ else
         lattest = lat_array{p}; lattest(isnan(lattest)) = [];
         % If the profile does not go below 500 m, skip it anyway (per
         % Hains, require for good BL sampling)
-        if min(radar_array{p}) > 0.5
-            prof_reject = bitset(prof_reject,1); db.reject{p} = prof_reject;
+        if min(radar_array{p}) > minRadarAlt
+            prof_reject = bitset(prof_reject,1); 
+            db.reject{p} = prof_reject;
             continue
             % If the entire profile was fill values (i.e. instrument trouble) obviously we have to skip this profile.
         elseif all(isnan(no2_array{p}));
-            prof_reject = bitset(prof_reject,2); db.reject{p} = prof_reject;
+            prof_reject = bitset(prof_reject,2); 
+            db.reject{p} = prof_reject;
+            continue
+        elseif (max(alt_array{p}) - min(alt_array{p})) < min_height
+            prof_reject = bitset(prof_reject,6);
+            db.reject{p} = prof_reject;
             continue
         end
         % Find all the pixels that impinge on this profile
@@ -591,7 +650,7 @@ else
         % Check the vza
         vza_xx = vza_p <= 60;
         pix_xx = pix_xx & vza_xx;
-        pix_reject(vza_xx) = bitset(pix_reject(vza_xx),5*uint8(ones(size(find(vza_xx)))),1);
+        pix_reject(~vza_xx) = bitset(pix_reject(~vza_xx),5*uint8(ones(size(find(~vza_xx)))),1);
         
         % Finally actually check if the profile falls in the pixel
         % using inpolygon(). Recall that we require there to be 20
@@ -602,7 +661,7 @@ else
         pix_coverage = zeros(size(omi_no2_p));
         for pix=1:size(loncorn_p,2)
             IN_3km = inpolygon(lon_3km, lat_3km, loncorn_p(:,pix), latcorn_p(:,pix));
-            if sum(~isnan(no2_3km(IN_3km)))<20
+            if sum(~isnan(no2_3km(IN_3km)))<numBLpoints
                 pix_xx(pix) = false;
                 pix_reject(pix) = bitset(pix_reject(pix),3,1);
                 continue % Pixel must have 20 valid measurments between 0-3 km altitude (good sampling of boundary layer)
@@ -819,16 +878,35 @@ else
         % Bin the aerosol data for this profile and find the max extinction
         % value and total integrated aerosol extinction.
         if aerfield ~= 0;
-            [aerbins] = bin_omisp_pressure(pres_array{p}, aer_array{p});
-            aer_max = max(aerbins);
-            if isempty(aer_max);
+            % Check the quality of the aerosol data in this profile. If the
+            % entire profile is NaNs, skip it
+            aer_quality = uint8(0);
+            if all(isnan(aer_array{p}))
+                % Set the first bit in aer_quality to 1 if all data is NaNs
+                aer_quality = bitset(aer_quality,1);
                 aer_max = -9e9;
+                aer_int = -9e9;
+            else
+                if sum(isnan(aer_array{p}))/numel(aer_array{p}) > 0.9
+                    % Set the second bit if >90% of the profile has NaNs
+                    % for aerosol data.
+                    aer_quality = bitset(aer_quality,2);
+                end
+                [aerbins] = bin_omisp_pressure(pres_array{p}, aer_array{p});
+                aer_max = max(aerbins);
+                if isempty(aer_max);
+                    aer_max = -9e9;
+                end
+                
+                binwidth = 0.25; % km
+                [aerintbins, aerbinmid] = bin_vertical_profile(alt_array{p}, aer_array{p}, binwidth);
+                [aerbinmid, aerintbins] = fill_nans(aerbinmid,aerintbins);
+                if numel(aerintbins) == 1
+                    % Set the third bit if only one bin had actual data
+                    aer_quality = bitset(aer_quality,3);
+                end
+                aer_int = trapz(aerbinmid, aerintbins);
             end
-            
-            binwidth = 0.25; % km
-            [aerintbins, aerbinmid] = bin_vertical_profile(alt_array{p}, aer_array{p}, binwidth);
-            [aerbinmid, aerintbins] = fill_nans(aerbinmid,aerintbins);
-            aer_int = trapz(aerbinmid, aerintbins);
         end
         
         % If any bits in the quality flag are set, set the summary
@@ -851,6 +929,7 @@ else
         if aerfield ~= 0; 
             db.aer_max_out{p} = aer_max; 
             db.aer_int_out{p} = aer_int;
+            db.aer_quality{p} = aer_quality;
         end
         
     end % End the loop over all profiles
@@ -880,6 +959,7 @@ else
         if aerfield ~= 0; 
             db.aer_max_out = db.aer_max_out(~fills); 
             db.aer_int_out = db.aer_int_out(~fills);
+            db.aer_quality = db.aer_quality(~fills);
         end
     end
 end
