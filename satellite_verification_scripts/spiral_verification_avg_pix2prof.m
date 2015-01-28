@@ -57,7 +57,9 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %           overpass
 %       9th: No BEHR data for this swath (probably used an OMI_SP only
 %           file)
-%       10-15: Unused
+%       10th: A warning that the flight path is considered to be in
+%           multiple time zones.
+%       11-15: Unused
 %       16th: Set if the column was skipped due to < 1% valid
 %           NO2, pressure, or temperature data
 %
@@ -304,12 +306,25 @@ if aerfield ~= 0
     aer_data = remove_merge_fills(Merge,aerfield);
 end
 
+% The variable that holds the quality flags
+q_base = uint16(0);
 
 % If the timezone was set to "auto," calculate the difference from UTC
-% based on the mean longitude. 
+% based on the mean longitude. This will produce a vector of the same
+% length as the utc and lon variables
 if strcmpi(tz,'auto')
-    tz = round(nanmean(lon)/15);
+    tz = round(lon/15);
+    
+    % If all elements in the timezone vector aren't the same, set the 10th
+    % bit in the quality flag
+    if ~all(tz==tz(1))
+        q_base = bitset(q_base,10,1);
+    end
 end
+
+% Now, use the timezone (entered or calculated) to produce a new vector of
+% times that reflect the local time at each point
+local_times = utc2local_sec(utc,tz);
 
 % Check what percentage of values were fill values, if >99% are fills for
 % data, temperature, or pressure, return NaNs and set the largest bit on
@@ -359,17 +374,16 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
 else
     if percent_nans > 0.9;
         warning('Merge file for %s has %.0f%% NO2 values as NaNs',datestr(merge_datenum,2),percent_nans*100);
-        q_base = uint16(bitset(0,5,1));
-    else
-        q_base = uint16(0);
+        q_base = uint16(bitset(q_base,5,1));
     end
     
     
-    % Make a composite profile for all data within 3 hours of OMI overpass.
+    % Make a composite profile for all data within 3 hours of OMI overpass
+    % - this will look for points based on their local time.
     % Find the median of the 10 highest altitude NO2 values (along with their
     % associated temperature and pressure values) and append these as the top
     % of tropopause value.
-    tt = utc >= local2utc('10:45',tz) & utc <= local2utc('16:45',tz);
+    tt = local_times >= local2utc('10:45',0) & utc <= local2utc('16:45',0);
     if sum(tt) == 0 % If no points fall within the time frame, return NaNs and exit
         prof_lon_out = NaN;
         prof_lat_out = NaN;
@@ -441,13 +455,17 @@ else
         unique_profnums = unique(profnum(profnum~=0));
         start_times = zeros(numel(unique_profnums),1);
         for a=1:numel(unique_profnums)
+            % If we're using a vector of timezones, get the most common
+            % timezone from the profile - we'll treat the whole profile as
+            % belonging to that timezone.  Save the local start time.
             xx = profnum == unique_profnums(a);
-            start_times(a) = min(utc(xx));
+            mct = mode(tz(xx));
+            start_times(a) = utc2local_sec(min(utc(xx)),mct);
         end
         
         % Remove from consideration any profiles with a start time before 10:45
         % am or after 4:45 pm local standard time
-        yy = start_times >= local2utc(starttime,tz) & start_times <= local2utc(endtime,tz);
+        yy = start_times >= local2utc(starttime,0) & start_times <= local2utc(endtime,0);
         unique_profnums = unique_profnums(yy); start_times = start_times(yy);
         
         % If the user passed a list of profile numbers, remove any profile
@@ -479,9 +497,18 @@ else
             profnum_array{a} = unique_profnums(a);
         end
     elseif strcmp(spiral_mode,'utcranges')
-        % Find all the utc start times that are between 10:45 and 4:45 local
-        % standard time
-        yy = Ranges(:,1) >= local2utc(starttime,tz) & Ranges(:,1) <= local2utc(endtime,tz);
+        % Find all the utc start times that are between within the
+        % specified range of local times.  Go through each range, find the
+        % data points that correspond to it, get the most common timezone,
+        % use that to set whether to include that range or not.
+        yy = false(size(Ranges,1),1);
+        for a=1:size(Ranges,1)
+            tz_ind = utc >= Ranges(a,1) & utc <= Ranges(a,2);
+            mct = mode(tz(tz_ind));
+            range_start_local = utc2local_sec(Ranges(a,1),mct);
+            yy(a) = range_start_local >= local2utc(starttime,0) && range_start_local <= local2utc(endtime,0);
+        end
+        %yy = Ranges(:,1) >= local2utc(starttime,tz) & Ranges(:,1) <= local2utc(endtime,tz);
         ranges_in_time = Ranges(yy,:);
         s = [1,sum(yy)];
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
