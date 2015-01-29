@@ -61,7 +61,7 @@ endtime = '15:00';
 % Time zone (3 letter abbreviation). Set to 'auto' to determine based on
 % the longitude of the data
 
-tz = 'auto';
+tz = 'est';
 
 
 % Which fields from the merge files to use. Set them to empty strings ('')

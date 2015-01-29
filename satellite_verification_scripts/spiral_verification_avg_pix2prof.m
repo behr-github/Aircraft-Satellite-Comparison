@@ -457,10 +457,19 @@ else
         for a=1:numel(unique_profnums)
             % If we're using a vector of timezones, get the most common
             % timezone from the profile - we'll treat the whole profile as
-            % belonging to that timezone.  Save the local start time.
+            % belonging to that timezone.  If timezone has been set
+            % manually, then just use that time zone to convert the start
+            % time of the profile. (obviously) Save the local start time.
             xx = profnum == unique_profnums(a);
-            mct = mode(tz(xx));
-            start_times(a) = utc2local_sec(min(utc(xx)),mct);
+            if ismatrix(tz) && isnumeric(tz)
+                % Case where we're using a vector of timezones
+                mct = mode(tz(xx));
+                start_times(a) = utc2local_sec(min(utc(xx)),mct);
+            elseif ischar(tz)
+                start_times(a) = utc2local_sec(min(utc(xx)),tz);
+            else
+                error(E.callError('tz_not_recognized','Cannot understand the format of timezones'));
+            end
         end
         
         % Remove from consideration any profiles with a start time before 10:45
