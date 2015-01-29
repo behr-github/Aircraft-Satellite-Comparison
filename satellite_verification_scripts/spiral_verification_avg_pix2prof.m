@@ -383,7 +383,7 @@ else
     % Find the median of the 10 highest altitude NO2 values (along with their
     % associated temperature and pressure values) and append these as the top
     % of tropopause value.
-    tt = local_times >= local2utc('10:45',0) & utc <= local2utc('16:45',0);
+    tt = local_times >= local2utc('10:45',0) & local_times <= local2utc('16:45',0);
     if sum(tt) == 0 % If no points fall within the time frame, return NaNs and exit
         prof_lon_out = NaN;
         prof_lat_out = NaN;
