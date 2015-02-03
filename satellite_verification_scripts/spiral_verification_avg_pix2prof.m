@@ -184,7 +184,7 @@ p.addParameter('starttime','10:45',@isstr);
 p.addParameter('endtime','16:45',@isstr);
 p.addParameter('campaign_name','',@isstr);
 p.addParameter('profiles',[], @(x) size(x,2)==2 || ischar(x));
-p.addParameter('profnums',[], @(x) isvector(x) || isempty(x));
+p.addParameter('profnums',[], @(x) (isvector(x) || isempty(x) || size(x,2)==2));
 p.addParameter('no2field','',@isstr);
 p.addParameter('altfield','',@isstr);
 p.addParameter('radarfield','',@isstr);
@@ -288,6 +288,21 @@ end
 if isempty(aerfield) % This will not override a 0 passed as this field.
     aerfield = FieldNames.aerosol_extinction;
 end
+
+% Finally check that user_profnums fullfills the requirements for the
+% profile mode, be it profile numbers or UTC ranges.
+if ~isempty(user_profnums)
+    if strcmp(spiral_mode,'profnum')
+        if ~isvector(user_profnums)
+            error(E.badinput('User defined profile numbers must be a vector.'));
+        end
+    elseif strcmp(spiral_mode,'utcranges')
+        if size(user_profnums,2) ~= 2
+            error(E.badinput('User defined UTC ranges must be in an n x 2 matrix'));
+        end
+    end
+end
+        
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%     LOAD DATA     %%%%%
@@ -450,6 +465,7 @@ else
     % Identify all spirals according to the 'profiles' input; reject any
     % without a start time between 10:45 and 4:45, that is, about 3 hours on
     % either side of the OMI overpass
+    dummy=1;
     if strcmp(spiral_mode,'profnum')
         % Get all unique profile numbers and their start times
         unique_profnums = unique(profnum(profnum~=0));
@@ -509,9 +525,18 @@ else
         % Find all the utc start times that are between within the
         % specified range of local times.  Go through each range, find the
         % data points that correspond to it, get the most common timezone,
-        % use that to set whether to include that range or not.
+        % use that to set whether to include that range or not. Also, check
+        % the "user_profnums" variable which will have specific UTC ranges
+        % to allow
         yy = false(size(Ranges,1),1);
         for a=1:size(Ranges,1)
+            if ~isempty(user_profnums) && ~(containedin(Ranges(a,1),user_profnums(:,1)) && containedin(Ranges(a,2),user_profnums(:,2)))
+                % If the UTC range is not one defined in the user_profnums
+                % (which is really user_ranges in this case, but it was
+                % called profnums first), skip the rest of this loop, which
+                % will not set yy(a) to true thus skipping this range.
+                continue
+            end
             tz_ind = utc >= Ranges(a,1) & utc <= Ranges(a,2);
             mct = mode(tz(tz_ind));
             range_start_local = utc2local_sec(Ranges(a,1),mct);

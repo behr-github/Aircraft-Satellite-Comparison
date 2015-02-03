@@ -27,8 +27,18 @@ function [ profile_struct ] = categorize_aerosol_profile(  )
 %%%%% USER INPUT %%%%%
 %%%%%%%%%%%%%%%%%%%%%%
 
-start_date = '9/01/2013';
-end_date = '9/31/2013';
+campaign_name = 'arctas-carb';
+
+[Names, dates, directory, range_files] = merge_field_names(campaign_name);
+
+start_date = '';
+end_date = '';
+
+if isempty(start_date) || isempty(end_date)
+    fprintf('Setting start and end dates based on the campaign name.\n');
+    start_date = dates{1};
+    end_date = dates{2};
+end
 
 %crit_frac is the fraction of the integrated column that we look for to
 %compare heights
@@ -46,8 +56,9 @@ alt_field = '';
 alt_conversion = 1; % The navigation data provided with the NO2 merge is already in km usually
 profnum_field = '';
 
-merge_directory = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft/';
-merge_file_pattern = 'Texas*_%s_%s_%s.mat';
+merge_directory = '';
+merge_file_pattern = '*_%s_%s_%s.mat';
+range_file = '';
 
 DEBUG_LEVEL = 2;
 
@@ -57,7 +68,6 @@ DEBUG_LEVEL = 2;
 
 dates = datenum(start_date):datenum(end_date);
 first_warning_alt_unit = 1;
-first_warning_no2 = 1;
 
 profile_struct = struct('Column_Fraction_Criterion',crit_frac,'Maximum_Magnitude_Criterion',mag_crit,'dz',dz,...
     'CoincidentLow',[],'CoincidentLowAlt',[],'CoincidentHigh',[],'CoincidentHighAlt',[],'AerosolAboveLow',[],...
@@ -66,34 +76,70 @@ profile_struct = struct('Column_Fraction_Criterion',crit_frac,'Maximum_Magnitude
 
 E = JLLErrors;
 
-% If the field names are left empty, take a best guess at which field name
-% is to be used, based on the start date (Baltimore, CA, and TX used
-% slightly different field names)
+% If the field names are left empty, use the field names returned from
+% merge_field_names
+if isempty(merge_directory)
+    fprintf('Setting merge file directory based on the campaign name.\n');
+    merge_directory = directory;
+end
 
-if datenum(start_date) >= datenum('7/01/2011') && datenum(start_date) <= datenum('7/31/2011')
-    if isempty(aerosol_field); aerosol_field = 'EXTamb532'; end
-    if isempty(no2_field); no2_field = 'NO2_LIF'; end
-    if isempty(alt_field); alt_field = 'GPS_ALT'; end
-    if isempty(profnum_field); profnum_field = 'ProfileSequenceNum'; end
-elseif datenum(start_date) >= datenum('1/16/2013') && datenum(start_date) <= datenum('2/06/2013')
-    if isempty(aerosol_field); aerosol_field = 'EXTamb532_TSI_PSAP'; end
-    if isempty(no2_field); no2_field = 'NO2_MixingRatio_LIF'; end
-    if isempty(alt_field); alt_field = 'GPS_ALT'; end
-    if isempty(profnum_field); profnum_field = 'ProfileNumber'; end
-elseif datenum(start_date) >= datenum('9/01/2013') && datenum(start_date) <= datenum('9/30/2013')
-    if isempty(aerosol_field); aerosol_field = 'EXT532nmamb_total_LARGE'; end
-    if isempty(no2_field); no2_field = 'NO2_MixingRatio_LIF'; end
-    if isempty(alt_field); alt_field = 'GPS_ALT'; end
-    if isempty(profnum_field); profnum_field = 'ProfileNumber'; end
-else
-    if any([isempty(aerosol_field), isempty(no2_field), isempty(alt_field), isempty(profnum_field)]);
-        E.callError('empty_fieldname','One or more field names is not specified and cannot be determined from the starting date.');
+if isempty(aerosol_field)
+    fprintf('Setting aerosol extinction field based on the campaign name.\n');
+    aerosol_field = Names.aerosol_extinction;
+end
+if isempty(no2_field)
+    fprintf('Setting NO2 field based on the campaign name.\n');
+    no2_field = Names.no2_lif;
+end
+if isempty(alt_field)
+    fprintf('Setting altitude field based on the campaign name.\n');
+    alt_field = Names.gps_alt;
+end
+if isempty(profnum_field)
+    fprintf('Setting profile number field based on the campaign name.\n');
+    profnum_field = Names.profile_numbers;
+end
+
+% If there is no range file specified AND merge_field_names returned at
+% least one possible file, set range_file to reference a valid file. If
+% there are multiple options, ask the user which one to use (and don't
+% continue until the input is valid).
+if isempty(range_file)
+    n = numel(range_files);
+    if n == 1
+        range_file = range_files{1};
+    elseif n > 1
+        while true
+            opts_nums = 1:n;
+            opts_str = cell(1,n);
+            for a=1:n
+                [~,file] = fileparts(range_files{a});
+                opts_str{a} = sprintf('%d: %s',opts_nums(a),file);
+            end
+            opts_spec = repmat('\t%s\n',1,n);
+            opts_msg = sprintf('Enter the number for which range file to use:\n%s> ',opts_spec);
+            rf_choice = input(sprintf(opts_msg,opts_str{:}));
+            if rf_choice >= 1 && rf_choice <= n
+                range_file = range_files{rf_choice};
+                break;
+            else
+                fprintf('\n\n%d is not a valid option.\n',rf_choice);
+            end
+        end
     end
 end
 
 %%%%%%%%%%%%%%%%%%%%%
 %%%%% MAIN LOOP %%%%%
 %%%%%%%%%%%%%%%%%%%%%
+
+% If the profile numbers field is empty, load the range file.  Make a list
+% of the dates in the range file to let us match up the date currently
+% being worked on with the correct index of the Ranges structure.
+if isempty(profnum_field)
+    load(range_file); % loads the Ranges variable, which is a data structure
+    range_dates = cellstr(datestr({Ranges.Date},29));
+end
 
 for d=1:numel(dates)
     % For each day, try to load the aerosol and NO2 merge files.  If one is
@@ -115,21 +161,58 @@ for d=1:numel(dates)
         first_warning_alt_unit = 0;
     end
     
-    [no2,~,no2_alt] = remove_merge_fills( Merge, no2_field, 'alt', alt_field );
+    [no2,utc,no2_alt] = remove_merge_fills( Merge, no2_field, 'alt', alt_field );
     no2_alt = no2_alt * alt_conversion;
     no2(no2<0) = NaN; % A negative concentration is clearly non-physical
     
     % Indentify each profile present in a given day and loop through each.
-    % Profile numbers of 0 indicate that the aircraft was not conducting a
-    % spiral at that time and so should be removed.
-    profnums = Merge.Data.(profnum_field).Values;
-    unique_profnums = unique(profnums);
-    unique_profnums(unique_profnums<1) = [];
     
-    for p=1:numel(unique_profnums)
+    if ~isempty(profnum_field)
+        if DEBUG_LEVEL > 0; fprintf('Using profile numbers\n'); end
+        % If the profile numbers field name is not an empty string, that
+        % means that this campaign does indeed have profile numbers.  So
+        % we'll use those to determine profiles.
+        profnums = Merge.Data.(profnum_field).Values;
+        profile_id = unique(profnums);
+        
+        % Because ranges (the next option) are defined as an n x 2 matrix,
+        % we need our list of profile numbers to be a column so that
+        % profile_id(a,:) returns a single number.
+        if ~iscolumn(profile_id)
+            profile_id = profile_id';
+        end
+        
+        % Profile numbers of 0 indicate that the aircraft was not conducting a
+        % spiral at that time and so should be removed.
+        profile_id(profile_id<1) = [];
+        
+        % If there were no profiles, let the user know and skip the loop.
+        if isempty(profile_id)
+            if DEBUG_LEVEL > 0; fprintf('No profiles detected on %s. Skipping.\n',datestr(dates(d))); end
+            continue
+        end
+    else
+        % If the profile numbers field name IS an empty string, assume that
+        % we need to use UTC ranges instead.  This will depend upon a range
+        % file being available. Ranges are to be given as an n x 2 matrix 
+        if DEBUG_LEVEL > 0; fprintf('Using UTC ranges\n'); end
+        
+        xx = find(strcmp(datestr(dates(d),29),range_dates));
+        if isempty(xx);
+            error('run_spiral:ranges','No UTC ranges found for %s',curr_date);
+        end
+        profile_id = Ranges(xx).Ranges;    
+    end
+    
+    for p=1:size(profile_id,1)
         % Find the data for each profile from both merges and bin it to
-        % 0.25 km bins.
-        xx = profnums == unique_profnums(p);
+        % 0.25 km bins.  If there is a valid profile number field, find
+        % the profile by number, otherwise use the UTC ranges.
+        if ~isempty(profnum_field)
+            xx = profnums == profile_id(p,:);
+        else
+            xx = utc >= profile_id(p,1) & utc <= profile_id(p,2);
+        end
         
         prof_no2 = no2(xx); prof_no2_alt = no2_alt(xx);
         prof_aer = ext(xx); prof_aer_alt = aer_alt(xx);
@@ -141,7 +224,7 @@ for d=1:numel(dates)
         % profile; there won't be enough information to carry out the
         % analysis
         if allbutone(isnan(no2_bins)) || allbutone(isnan(aer_bins));
-            if DEBUG_LEVEL > 1; fprintf('\tNO2 or Aerosol bins for profile #%d on %s have 0 or 1 non-NaN bins\n',unique_profnums(p),datestr(dates(d))); end
+            if DEBUG_LEVEL > 1; fprintf('\tNO2 or Aerosol bins for profile #%d on %s have 0 or 1 non-NaN bins\n',profile_id(p,1),datestr(dates(d))); end
             continue 
         end
         
@@ -214,7 +297,7 @@ for d=1:numel(dates)
                 warning('No solution to NO2 profile. Profile will not be categorized.');
                 continue
             elseif all(xx);
-                warning('Both solutions for NO2 profile #%d (%0.2f, %0.2f) fall in expected range. Profile will not be categorized.',unique_profnums(p),z90_no2,z90_no2_neg);
+                warning('Both solutions for NO2 profile #%d (%0.2f, %0.2f) fall in expected range. Profile will not be categorized.',profile_id(p,1),z90_no2,z90_no2_neg);
                 continue;
             else
                 z90_no2 = test(xx);
@@ -242,7 +325,7 @@ for d=1:numel(dates)
                 warning('No solution to aerosol profile. Profile will not be categorized.');
                 continue
             elseif all(xx) > 0;
-                warning('Both solutions for aerosol profile #%d (%0.2f, %0.2f) fall in expected range. Profile will not be categorized.',unique_profnums(p),z90_aer,z90_aer_neg);
+                warning('Both solutions for aerosol profile #%d (%0.2f, %0.2f) fall in expected range. Profile will not be categorized.',profile_id(p,1),z90_aer,z90_aer_neg);
                 continue;
             else
                 z90_aer = test(xx);
@@ -252,25 +335,35 @@ for d=1:numel(dates)
         
         % Assign the profile to a specific category
         if abs(z90_aer - z90_no2) < dz && max(aer_bins) < mag_crit;
-            profile_struct.CoincidentLow = [profile_struct.CoincidentLow; unique_profnums(p)];
-            profile_struct.CoincidentLowAlt = [profile_struct.CoincidentLowAlt; unique_profnums(p), z90_no2, z90_aer];
+            profile_struct.CoincidentLow = [profile_struct.CoincidentLow; profile_id(p,:)];
+            profile_struct.CoincidentLowAlt = [profile_struct.CoincidentLowAlt; profile_id(p,:), z90_no2, z90_aer];
         elseif abs(z90_aer - z90_no2) < dz && max(aer_bins) >= mag_crit;
-            profile_struct.CoincidentHigh = [profile_struct.CoincidentHigh; unique_profnums(p)];
-            profile_struct.CoincidentHighAlt = [profile_struct.CoincidentHighAlt; unique_profnums(p), z90_no2, z90_aer];
+            profile_struct.CoincidentHigh = [profile_struct.CoincidentHigh; profile_id(p,:)];
+            profile_struct.CoincidentHighAlt = [profile_struct.CoincidentHighAlt; profile_id(p,:), z90_no2, z90_aer];
         elseif z90_aer > z90_no2 + dz && max(aer_bins) < mag_crit;
-            profile_struct.AerosolAboveLow = [profile_struct.AerosolAboveLow; unique_profnums(p)];
-            profile_struct.AerosolAboveLowAlt = [profile_struct.AerosolAboveLowAlt; unique_profnums(p), z90_no2, z90_aer];
+            profile_struct.AerosolAboveLow = [profile_struct.AerosolAboveLow; profile_id(p,:)];
+            profile_struct.AerosolAboveLowAlt = [profile_struct.AerosolAboveLowAlt; profile_id(p,:), z90_no2, z90_aer];
         elseif z90_aer > z90_no2 + dz && max(aer_bins) >= mag_crit;
-            profile_struct.AerosolAboveHigh = [profile_struct.AerosolAboveHigh; unique_profnums(p)];
-            profile_struct.AerosolAboveHighAlt = [profile_struct.AerosolAboveHighAlt; unique_profnums(p), z90_no2, z90_aer];
+            profile_struct.AerosolAboveHigh = [profile_struct.AerosolAboveHigh; profile_id(p,:)];
+            profile_struct.AerosolAboveHighAlt = [profile_struct.AerosolAboveHighAlt; profile_id(p,:), z90_no2, z90_aer];
         elseif z90_no2 > z90_aer + dz && max(aer_bins) < mag_crit;
-            profile_struct.NO2AboveLow = [profile_struct.NO2AboveLow; unique_profnums(p)];
-            profile_struct.NO2AboveLowAlt = [profile_struct.NO2AboveLowAlt; unique_profnums(p), z90_no2, z90_aer];
+            profile_struct.NO2AboveLow = [profile_struct.NO2AboveLow; profile_id(p,:)];
+            profile_struct.NO2AboveLowAlt = [profile_struct.NO2AboveLowAlt; profile_id(p,:), z90_no2, z90_aer];
         elseif z90_no2 > z90_aer + dz && max(aer_bins) >= mag_crit;
-            profile_struct.NO2AboveHigh = [profile_struct.NO2AboveHigh; unique_profnums(p)];
-            profile_struct.NO2AboveHighAlt = [profile_struct.NO2AboveHighAlt; unique_profnums(p), z90_no2, z90_aer];
+            profile_struct.NO2AboveHigh = [profile_struct.NO2AboveHigh; profile_id(p,:)];
+            profile_struct.NO2AboveHighAlt = [profile_struct.NO2AboveHighAlt; profile_id(p,:), z90_no2, z90_aer];
         end
     end
+end
+
+% Output - if there is no output variable, put a variable in the base
+% workspace with the name <CAMPAIGN_NAME>_AerCat
+if nargout < 1
+    % Make the variable name start with the campaign name but in upper case
+    % with all non-letter or number characters removed.
+    varname = sprintf('%s_AerCat',upper(regexprep(campaign_name,'\W','')));
+    eval(sprintf('%s = profile_struct;',varname));
+    putvar(sprintf('%s',varname));
 end
 
 

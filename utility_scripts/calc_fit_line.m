@@ -1,16 +1,17 @@
-function [ P,R ] = plot_fit_line( x, y, varargin )
+function [ line_x, line_y, legend_str, P,R ] = calc_fit_line( x, y, varargin )
 %plot_fit_line Draws a fit line and 1:1 line on the current figure.
-%   Automatically draws a fit line on the current plot (given the data on
-%   the plot as input variables - i.e. after plot(x,y) call
-%   plot_fit_line(x,y) to make the lines). Also creates a legend with the
-%   linear fit info.  By default also draws a 1:1 line.  This can be
-%   disabled by setting the parameter 'one2one' to 0.
+%   Calculates a line of best fit for the given data after removing NaNs.
+%   Returns vectors of x & y points to plot the line, a string formatted
+%   with information on the fit line for a legend, the polynomial
+%   coefficients ( [slope, intercept] ) and the R^2 value.
 %
 %   By default this uses the normal polyfit function to determine the fit
 %   line, to use a reduced major axis regression (function by Edward
 %   Peitzer, http://www.mbari.org/staff/etp3/regress/index.htm), set the
 %   parameter 'regression' to 'majoraxis'.  This is good when both x & y
-%   have errors, rather than assuming the x values are 100% correct.
+%   have errors, rather than assuming the x values are 100% correct. Set
+%   the parameter 'regression' to 'rma' to use his geometric mean fit
+%   (lsqfitgma).
 
 p = inputParser;
 p.addRequired('x',@isnumeric);
@@ -40,13 +41,10 @@ elseif strcmpi(regression,'RMA');
     [P(1), P(2), R] = lsqfitgm(x,y);
     R = R^2;
 end
-line(0:1e16:1e17,polyval(P,0:1e16:1e17),'color','k','linestyle','--','linewidth',2);
-legendcell = {'All points',sprintf('Fit: %.4fx + %.2g \nR^2 = %.4f',P(1),P(2),R)};
 
-if one2one
-    line(0:1e16:1e17,1:1e16:1e17,'color','r','linestyle',':','linewidth',2);
-    legendcell{end+1} = '1:1';
-end
-legend(legendcell{:})
+line_x = 0:1e16:1e17;
+line_y = polyval(P,line_x);
+legend_str = sprintf('Fit: %.4fx + %.2g \nR^2 = %.4f',P(1),P(2),R);
+
 end
 
