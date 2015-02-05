@@ -120,9 +120,9 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %
 %   no2field: If unspecified, passed an empty string, or set to 'lif' will
 %   default to the LIF (our data) field, field name determined by calling
-%   merge_field_names with the campaign name specified. If set to 'ncar',
-%   will use the NCAR chemiluminescence data. Otherwise will use the field
-%   specified by the string given.
+%   merge_field_names with the campaign name specified. If set to 'cl',
+%   will use the chemiluminescence data - NCAR if available, NOAA
+%   otherwise.. Otherwise will use the field specified by the string given.
 %
 %   altfield: If unspecified or set to 'gps' uses the GPS altitude field
 %   for the campaign, if set to 'pressure', uses the pressure altitude
@@ -271,7 +271,7 @@ end
 % merge field names retrieved.
 if isempty(no2field) || strcmpi(no2field,'lif')
     no2field = FieldNames.no2_lif;
-elseif strcmpi(no2field,'ncar')
+elseif strcmpi(no2field,'cl')
     no2field = FieldNames.no2_ncar;
 end
 
@@ -921,7 +921,7 @@ else
         temp_profile = interp1(altbins,tempbins,alt_profile,'linear');
         pres_profile = exp(interp1(altbins,log(presbins),alt_profile,'linear')); % Linearly interpolate ln(P) since that is what depends linearly on altitude
         
-        % Carry out the numerical integration
+        % Carry out the numerical integration, 
         no2_column = 0;
         for z=1:numel(alt_profile)
             P_z = pres_profile(z); T = temp_profile(z); no2_z = no2_profile(z);
