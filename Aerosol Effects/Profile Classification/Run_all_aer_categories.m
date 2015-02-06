@@ -15,7 +15,7 @@ fprintf('%s\n%s\n%s\n%s\n',accent,msg,msg2,accent);
 pause(4);
 
 % Make this equal to your structure with the category information.
-CatStruct = DISCOVERTX_AerCat;
+CatStruct = SEAC4RS_AerCat;
 
 % The six categories to run
 aer_cats = {'CoincidentLow','CoincidentHigh','AerosolAboveLow','AerosolAboveHigh','NO2AboveLow','NO2AboveHigh'};
@@ -27,7 +27,7 @@ Comparison = struct('Category',aer_cats,'lon_iall',cell(1,6),'lat_iall',cell(1,6
 
 % Loop through the six categories, calling Run_Spiral_Verification for each
 for c=1:6
-    [Comparison(c).lon_iall, Comparison(c).lat_iall, Comparison(c).airno2_iall, Comparison(c).omino2_iall,...
-        Comparison(c).behrno2_iall, Comparison(c).db_iall, Comparison(c).dates_iall] =...
+    [Comparison(c).lon_iall, Comparison(c).lat_iall, Comparison(c).omino2_iall, Comparison(c).behrno2_iall,...
+        Comparison(c).airno2_iall, Comparison(c).db_iall, Comparison(c).dates_iall] =...
         Run_Spiral_Verification(CatStruct.(aer_cats{c}));
 end
