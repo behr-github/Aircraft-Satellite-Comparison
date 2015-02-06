@@ -98,7 +98,7 @@ minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to
 % range files returned from merge_field_names.  If there is one, that one
 % will be used, otherwise the user is presented with his options.
 profile_input = '';
-profnums = 'fetch'; % set to 'fetch' to use the first input to this function as the profile numbers
+profnums = ''; % set to 'fetch' to use the first input to this function as the profile numbers
 range_file = ''; % the file to use for the UTC ranges
 
 

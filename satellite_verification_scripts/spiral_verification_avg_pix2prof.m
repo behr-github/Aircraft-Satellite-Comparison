@@ -121,9 +121,9 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %
 %   no2field: If unspecified, passed an empty string, or set to 'lif' will
 %   default to the LIF (our data) field, field name determined by calling
-%   merge_field_names with the campaign name specified. If set to 'ncar',
-%   will use the NCAR chemiluminescence data. Otherwise will use the field
-%   specified by the string given.
+%   merge_field_names with the campaign name specified. If set to 'cl',
+%   will use the chemiluminescence data - NCAR if available, NOAA
+%   otherwise.. Otherwise will use the field specified by the string given.
 %
 %   altfield: If unspecified or set to 'gps' uses the GPS altitude field
 %   for the campaign, if set to 'pressure', uses the pressure altitude
@@ -187,6 +187,7 @@ p.addParameter('campaign_name','',@isstr);
 p.addParameter('profiles',[], @(x) size(x,2)==2 || ischar(x));
 p.addParameter('profnums',[], @(x) (isvector(x) || isempty(x) || size(x,2)==2));
 p.addParameter('no2field','',@isstr);
+p.addParameter('conv_fact',1e-12,@isscalar);
 p.addParameter('altfield','',@isstr);
 p.addParameter('radarfield','',@isstr);
 p.addParameter('presfield','PRESSURE',@isstr);
@@ -217,6 +218,7 @@ profiles = pout.profiles;
 user_profnums = pout.profnums;
 campaign_name = pout.campaign_name;
 no2field = pout.no2field;
+conv_fact = pout.conv_fact;
 altfield = pout.altfield;
 radarfield = pout.radarfield;
 presfield = pout.presfield;
@@ -272,7 +274,7 @@ end
 % merge field names retrieved.
 if isempty(no2field) || strcmpi(no2field,'lif')
     no2field = FieldNames.no2_lif;
-elseif strcmpi(no2field,'ncar')
+elseif strcmpi(no2field,'cl')
     no2field = FieldNames.no2_ncar;
 end
 
@@ -363,7 +365,7 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     % temperature data
     setReturnVar(uint16(2^15+1),spiral_mode,aerfield,DEBUG_LEVEL);
     return;
-    
+
 else
     if percent_nans > 0.9;
         warning('Merge file for %s has %.0f%% NO2 values as NaNs',datestr(merge_datenum,2),percent_nans*100);
@@ -383,6 +385,8 @@ else
         return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
+    % Calculate the uncertainty in the composite bins as the std. error
+    [~,~, no2_composite_stderr] = bin_omisp_pressure(pres(tt),no2(tt),'mean');
     temp_composite = bin_omisp_pressure(pres(tt),temperature(tt));
     
     % The top bin of bin_omisp_pressure (200 hPa) is right around the normal
@@ -394,11 +398,15 @@ else
         M1 = sortrows([pres', no2', temperature']);
         top = find(~isnan(M1(:,2)),10,'first'); % Since lower pressure = higher altitude, we want the first 10 NO2 measurements when sorted by pressure.
         no2_comp_top_med = median(M1(top,2)); temp_comp_top_med = nanmedian(M1(top,3)); pres_comp_top_med = nanmedian(M1(top,1));
+        
+        % Assume the error is the standard error of the top ten points
+        no2_comp_top_med_stderr = std(M1(top,2))/sqrt(10);
         if no2_comp_top_med < 3; 
             no2_comp_top_med = 1.5; 
             if DEBUG_LEVEL > 0; fprintf('Composite profile top < LoD\n'); end
         end
         no2_composite(end) = no2_comp_top_med;
+        no2_composite_stderr(end) = no2_comp_top_med_stderr;
         
         % Temperature should have a linear relationship to altitude
         % (i.e., log(pressure)) up to the tropopause; therefore extrapolate
@@ -410,16 +418,15 @@ else
         % Geophys. Res. 2008, 113, D16S31) since pressure has an exponential
         % relation to altitude.  Log-log space would assume that NO2 also has
         % an exponential relationship to altitude.
-        [~, no2_tmp] = fill_nans(log(pres_composite),log(no2_composite),'noclip');
+        [~, no2_tmp, no2_tmperr] = fill_nans(log(pres_composite),log(no2_composite),log(no2_composite_stderr),'noclip');
         no2_composite = exp(no2_tmp);
-        
+        no2_composite_stderr = exp(no2_tmperr);    
         
     end
     
     % Identify all spirals according to the 'profiles' input; reject any
     % without a start time between 10:45 and 4:45, that is, about 3 hours on
     % either side of the OMI overpass
-    dummy=1;
     if strcmp(spiral_mode,'profnum')
         % Get all unique profile numbers and their start times
         unique_profnums = unique(profnum(profnum~=0));
@@ -620,6 +627,7 @@ else
         db.aer_int_out = cell(n,1);
         db.aer_quality = cell(n,1);
     end
+    db.column_error = cell(n,1);
     
     % Also, define Avogadro's number and gas constant;
     Av = 6.022e23; % molec. / mol
@@ -744,6 +752,9 @@ else
         M = sortrows([pres_array{p}', no2_array{p}', radar_array{p}', temp_array{p}', alt_array{p}']);
         xx = find(~isnan(M(:,2)),10,'last'); zz = find(~isnan(M(:,2)),10,'first');
         bottom_med_no2 = median(M(xx,2)); top_med_no2 = median(M(zz,2));
+        % Calculate the standard error for the top and bottom median points
+        bottom_med_no2_stderr = std(M(xx,2))/sqrt(10);
+        top_med_no2_stderr = std(M(zz,2))/sqrt(10);
         
         if DEBUG_LEVEL > 3;
             f2 = figure;
@@ -801,6 +812,7 @@ else
         % of the current one.
         if top_med_no2 < 100;
             no2bins(end) = top_med_no2;
+            no2stderr(end) = top_med_no2_stderr;
             tempbins(end) = top_med_temp;
             topcol = [0 0.7 0];
         else
@@ -808,6 +820,7 @@ else
             % all bins in the composite profile above that
             xx = pres_composite < min(presbins(~isnan(no2bins)));
             no2bins(xx) = no2_composite(xx);
+            no2stderr(xx) = no2_composite_stderr(xx);
             tempbins(xx) = temp_composite(xx);
             topcol = [0.7 0 0.7];
             
@@ -853,17 +866,21 @@ else
                 case 'Abort run'
                     error('spiral_ver:surface_pres','Surface pressure < second bin.');
             end
-        elseif surface_pres < presbins(1); % if surface is above the bottom bin center...
+        elseif surface_pres < presbins(1); 
+            % if surface is above the bottom bin center but below the
+            % second bin, just reset the first bin pressure to be at the
+            % surface.
             presbins(1) = surface_pres;
             nans = isnan(tempbins);
             tempbins(nans) = interp1(log(pres_composite(~nans)), tempbins(~nans), log(pres_composite(nans)),'linear','extrap'); % Just in case the temperature data doesn't cover all the remaining bins, interpolate it
         else
+            % Otherwise, add a "surface bin" to interpolate to.
             no2nans = isnan(no2bins);
             no2bins = no2bins(~no2nans); tempbins = tempbins(~no2nans); presbins = presbins(~no2nans); no2stderr = no2stderr(~no2nans);
             no2bins = [bottom_med_no2, no2bins];
+            no2stderr = [bottom_med_no2_stderr, no2stderr];
             tempbins = [bottom_med_temp, tempbins];
             presbins = [surface_pres, presbins];
-            no2stderr = [NaN, no2stderr];
         end
         
         
@@ -890,13 +907,38 @@ else
         temp_profile = interp1(altbins,tempbins,alt_profile,'linear');
         pres_profile = exp(interp1(altbins,log(presbins),alt_profile,'linear')); % Linearly interpolate ln(P) since that is what depends linearly on altitude
         
-        % Carry out the numerical integration
+        % Fill in the standard error nans, but we don't need to interpolate
+        % to every 100 cm altitude point.
+        [~,~,no2stderr] = fill_nans(altbins,no2bins,no2stderr,'noclip');
+        
+        % Carry out the numerical integration, 
         no2_column = 0;
         for z=1:numel(alt_profile)
             P_z = pres_profile(z); T = temp_profile(z); no2_z = no2_profile(z);
-            conc_NO2 = (Av * P_z * no2_z * 1e-12)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv
+            conc_NO2 = (Av * P_z * no2_z * conv_fact)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv
             no2_column = no2_column + conc_NO2 * dz * 100; % Integrating in 100dz cm increments
         end
+        
+        % The error propagation will be handled by considering this to be
+        % effectively a trapezoid rule implementation.  The math behind
+        % this is in my BEHR notebook from 4 Feb 2015 - Josh Laughner
+        
+        % Number density of air at each bin center
+        Nair = (presbins .* Av)./(R .* tempbins);
+        % Calculates the error for each trapezoid using vectors, then sum
+        % up that vector and square root it to find the total column error.
+        % Since the concentrations are defined in molec./cm^3, we need to
+        % convert altitude bins from km to cm (hence the factor of 1e5).
+        % Also, NO2 values are usually reported (by us at least) in pptv,
+        % hence the conv_fact defaults to 1e-12.
+        column_error = sqrt( sum( ((altbins(2:end) - altbins(1:end-1))*1e5/2).^2 .* (no2stderr(2:end).*conv_fact).^2 .* Nair(2:end).^2 +...
+            ((altbins(2:end) - altbins(1:end-1))*1e5/2).^2 .* (no2stderr(1:end-1).*conv_fact).^2 .* Nair(1:end-1).^2 ) );
+        % Double check that this number is a scalar. This will catch if a
+        % matrix (rather than a vector) slips into this calculation.
+        if ~isscalar(column_error)
+            error(E.callError('''column_error'' is not a scalar value but it should be'));
+        end
+        
         
         % Save the output for this profile
         prof_lon_out(p) = nanmean(lon_array{p});
@@ -962,6 +1004,7 @@ else
             db.aer_int_out{p} = aer_int;
             db.aer_quality{p} = aer_quality;
         end
+        db.column_error{p} = column_error;
         
     end % End the loop over all profiles
 
@@ -993,6 +1036,7 @@ else
             db.aer_int_out = db.aer_int_out(~fills);
             db.aer_quality = db.aer_quality(~fills);
         end
+        db.column_error = db.column_error(~fills);
     end
 end
 end
@@ -1036,6 +1080,7 @@ if aerfield ~= 0;
     db.aer_int_out = {NaN};
     db.aer_quality = {NaN};
 end
+db.column_error = {NaN};
 
 assignin('caller','prof_lon_out',prof_lon_out);
 assignin('caller','prof_lat_out',prof_lat_out);
