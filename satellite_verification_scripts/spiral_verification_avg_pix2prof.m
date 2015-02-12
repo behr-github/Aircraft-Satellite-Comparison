@@ -53,13 +53,14 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %           used to calculate the surface pressure.
 %       7th: Indicates that the GLOBE terrain database was used to find the
 %           surface pressure because no radar data was available
-%       8th: No data points fall within the time frame of +/- 3 hr from OMI
-%           overpass
+%       8th: No data points fall within the specified time frame
 %       9th: No BEHR data for this swath (probably used an OMI_SP only
 %           file)
 %       10th: A warning that the flight path is considered to be in
 %           multiple time zones.
-%       11-15: Unused
+%       11th: Data is present in the specified time range, but profiles or
+%           ranges are not
+%       12-15: Unused
 %       16th: Set if the column was skipped due to < 1% valid
 %           NO2, pressure, or temperature data
 %
@@ -362,33 +363,9 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     end
     % We must skip this merge file if there is no NO2, pressure, or
     % temperature data
-    prof_lon_out = NaN;
-    prof_lat_out = NaN;
-    omi_no2_out = NaN;
-    behr_no2_out = NaN;
-    air_no2_out = NaN;
-    
-    db.all_omi = {NaN};
-    db.all_behr = {NaN};
-    db.quality_flags = {uint16(2^15+1)};
-    db.coverage_fraction = {NaN};
-    db.dist_vectors = {NaN};
-    db.loncorn = {NaN(4,1)};
-    db.latcorn = {NaN(4,1)};
-    db.strat_NO2 = {NaN};
-    db.modis_cloud = {NaN};
-    if strcmp(spiral_mode,'profnum'); db.profnums = {NaN};
-    else db.profnums = {NaN(1,2)};
-    end
-    db.reject = {uint8(2)};
-    db.lon_3km = {NaN};
-    db.lat_3km = {NaN};
-    if aerfield ~= 0; 
-        db.aer_max_out = {NaN}; 
-        db.aer_int_out = {NaN};
-        db.aer_quality = {NaN};
-    end
-    db.column_error = {NaN};
+    setReturnVar(uint16(2^15+1),spiral_mode,aerfield,DEBUG_LEVEL);
+    return;
+
 else
     if percent_nans > 0.9;
         warning('Merge file for %s has %.0f%% NO2 values as NaNs',datestr(merge_datenum,2),percent_nans*100);
@@ -403,33 +380,8 @@ else
     % of tropopause value.
     tt = local_times >= local2utc('10:45',0) & local_times <= local2utc('16:45',0);
     if sum(tt) == 0 % If no points fall within the time frame, return NaNs and exit
-        prof_lon_out = NaN;
-        prof_lat_out = NaN;
-        omi_no2_out = NaN;
-        behr_no2_out = NaN;
-        air_no2_out = NaN;
-        
-        db.all_omi = {NaN};
-        db.all_behr = {NaN};
-        q_base = bitset(q_base,1,1); db.quality_flags = {bitset(q_base,8,1)};
-        db.coverage_fraction = {NaN};
-        db.dist_vectors = {NaN};
-        db.loncorn = {NaN(4,1)};
-        db.latcorn = {NaN(4,1)};
-        db.strat_NO2 = {NaN};
-        db.modis_cloud = {NaN};
-        if strcmp(spiral_mode,'profnum'); db.profnums = {NaN};
-        else db.profnums = {NaN(1,2)};
-        end
-        db.reject = {uint8(2)};
-        db.lon_3km = {NaN};
-        db.lat_3km = {NaN};
-        if aerfield ~= 0; 
-            db.aer_max_out = {NaN}; 
-            db.aer_int_out = {NaN};
-            db.aer_quality = {NaN};
-        end
-        db.column_error = {NaN};
+        q_base = bitset(q_base,1,1); % Set the summary and specific quality flags
+        setReturnVar(bitset(q_base,8,1), spiral_mode, aerfield, DEBUG_LEVEL);
         return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
@@ -500,6 +452,13 @@ else
         % Remove from consideration any profiles with a start time before 10:45
         % am or after 4:45 pm local standard time
         yy = start_times >= local2utc(starttime,0) & start_times <= local2utc(endtime,0);
+        
+        % If no profiles are left, return null values and exit
+        if sum(yy) == 0
+            setReturnVar(bitset(q_base,11,1), spiral_mode, aerfield,DEBUG_LEVEL);
+            return
+        end
+        
         unique_profnums = unique_profnums(yy); start_times = start_times(yy);
         
         % If the user passed a list of profile numbers, remove any profile
@@ -551,8 +510,15 @@ else
             range_start_local = utc2local_sec(Ranges(a,1),mct);
             yy(a) = range_start_local >= local2utc(starttime,0) && range_start_local <= local2utc(endtime,0);
         end
-        %yy = Ranges(:,1) >= local2utc(starttime,tz) & Ranges(:,1) <= local2utc(endtime,tz);
+        
+        % If no profiles are left, return null values and exit
+        if sum(yy) == 0
+            setReturnVar(bitset(q_base,11,1), spiral_mode, aerfield,DEBUG_LEVEL);
+            return
+        end
+        
         ranges_in_time = Ranges(yy,:);
+        start_times = utc2local_sec(Ranges(yy,1)',0);
         s = [1,sum(yy)];
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
         lat_array = cell(s); lon_array = cell(s); aer_array = cell(s);
@@ -655,6 +621,7 @@ else
     db.reject = cell(n,1);
     db.lon_3km = cell(n,1);
     db.lat_3km = cell(n,1);
+    db.start_times = num2cell(start_times);
     if aerfield ~= 0; 
         db.aer_max_out = cell(n,1); 
         db.aer_int_out = cell(n,1);
@@ -1033,6 +1000,7 @@ else
         db.reject{p} = pix_reject;
         db.lon_3km{p} = lon_3km;
         db.lat_3km{p} = lat_3km;
+        %db.start_times has alreadfy been handled
         if aerfield ~= 0; 
             db.aer_max_out{p} = aer_max; 
             db.aer_int_out{p} = aer_int;
@@ -1064,6 +1032,7 @@ else
         db.reject = db.reject(~fills);
         db.lon_3km = db.lon_3km(~fills);
         db.lat_3km = db.lat_3km(~fills);
+        db.start_times = db.start_times(~fills);
         if aerfield ~= 0; 
             db.aer_max_out = db.aer_max_out(~fills); 
             db.aer_int_out = db.aer_int_out(~fills);
@@ -1072,4 +1041,53 @@ else
         db.column_error = db.column_error(~fills);
     end
 end
+end
+
+function setReturnVar(q_flag_val,spiral_mode,aerfield,DEBUG_LEVEL)
+% Sets fill return values in the event that this function needs to return
+% early. Needs the value for q_flag (since that represents why the function
+% is returning early) and the value for aerfield, to determine whether to
+% include aerosol data. Also uses DEBUG_LEVEL to print messages.
+if DEBUG_LEVEL>0; fprintf('*** Creating null return values ***\n'); end
+
+% Double check that the summary bit is set on the quality flag if needed
+if q_flag_val > 0
+    q_flag_val = bitset(q_flag_val,1,1);
+end
+
+prof_lon_out = NaN;
+prof_lat_out = NaN;
+omi_no2_out = NaN;
+behr_no2_out = NaN;
+air_no2_out = NaN;
+
+db.all_omi = {NaN};
+db.all_behr = {NaN};
+db.quality_flags = {q_flag_val};
+db.coverage_fraction = {NaN};
+db.dist_vectors = {NaN};
+db.loncorn = {NaN(4,1)};
+db.latcorn = {NaN(4,1)};
+db.strat_NO2 = {NaN};
+db.modis_cloud = {NaN};
+if strcmp(spiral_mode,'profnum'); db.profnums = {NaN};
+else db.profnums = {NaN(1,2)};
+end
+db.reject = {uint8(2)};
+db.lon_3km = {NaN};
+db.lat_3km = {NaN};
+db.start_times = {NaN};
+if aerfield ~= 0;
+    db.aer_max_out = {NaN};
+    db.aer_int_out = {NaN};
+    db.aer_quality = {NaN};
+end
+db.column_error = {NaN};
+
+assignin('caller','prof_lon_out',prof_lon_out);
+assignin('caller','prof_lat_out',prof_lat_out);
+assignin('caller','omi_no2_out',omi_no2_out);
+assignin('caller','behr_no2_out',behr_no2_out);
+assignin('caller','air_no2_out',air_no2_out);
+assignin('caller','db',db);
 end
