@@ -18,7 +18,7 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'discover-ca'; % Which campaign this is for. Used to automatically find field names
+campaign_name = 'seac4rs'; % Which campaign this is for. Used to automatically find field names
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
@@ -45,7 +45,7 @@ end
 % allowed so long as there is enough of the prefix there to uniquely
 % identify 1 file per date in the given directory.
 merge_dir = '';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
+behr_dir = '/Volumes/share-sat/SAT/BEHR/BEHR_Files_2014/';
 behr_prefix = 'OMI_BEHR_omi*';
 
 if isempty(merge_dir)
@@ -55,8 +55,8 @@ end
 
 % Start and end times (in military format) for which profiles to consider.
 % General recommendation is +/-1.5 hr from overpass.
-starttime = '12:00';
-endtime = '15:00';
+starttime = '10:30';
+endtime = '16:30';
 
 % Time zone (3 letter abbreviation). Set to 'auto' to determine based on
 % the longitude of the data
@@ -68,7 +68,7 @@ tz = 'auto';
 % to automatically guess the correct field for the given campaign.  
 
 no2field = ''; % Which NO2 data field to use. Leave as empty string or 'lif' for our LIF data, set to 'ncar' for NCAR chemiluminescence data, or any other string to override.
-aerfield = 0; % Which aerosol extinction field to use.
+aerfield = ''; % Which aerosol extinction field to use.
 altfield = ''; % Which altitude field to use. Can set to 'pressure' or 'gps' ('' defaults to gps), or override.
 radarfield = ''; % The field for radar altitude.
 
@@ -97,8 +97,8 @@ minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to
 % interest.  If range_file is left blank, the program will look at the
 % range files returned from merge_field_names.  If there is one, that one
 % will be used, otherwise the user is presented with his options.
-profile_input = '';
-profnums = ''; % set to 'fetch' to use the first input to this function as the profile numbers
+profile_input = 'ranges';
+profnums = 'fetch'; % set to 'fetch' to use the first input to this function as the profile numbers
 range_file = ''; % the file to use for the UTC ranges
 
 
@@ -126,40 +126,9 @@ clean = 1; % Set to 0 to keep all pixel comparisons, even those with fill values
 
 % If we are using ranges, load the range file and extract the date
 % information - we'll need that to match up the correct set of ranges with
-% the correct date.
+% the correct date.    
+fprintf('Using %s as the range file\n',range_file);
 
-% If there is no range file specified AND merge_field_names returned at
-% least one possible file, set range_file to reference a valid file. If
-% there are multiple options, ask the user which one to use (and don't
-% continue until the input is valid).
-if strcmpi(profile_input,'ranges')
-    if isempty(range_file)
-        n = numel(range_files);
-        if n == 1
-            range_file = range_files{1};
-        elseif n > 1
-            while true
-                opts_nums = 1:n;
-                opts_str = cell(1,n);
-                for a=1:n
-                    [~,file] = fileparts(range_files{a});
-                    opts_str{a} = sprintf('%d: %s',opts_nums(a),file);
-                end
-                opts_spec = repmat('\t%s\n',1,n);
-                opts_msg = sprintf('Enter the number for which range file to use:\n%s> ',opts_spec);
-                rf_choice = input(sprintf(opts_msg,opts_str{:}));
-                if rf_choice >= 1 && rf_choice <= n
-                    range_file = range_files{rf_choice};
-                    break;
-                else
-                    fprintf('\n\n%d is not a valid option.\n',rf_choice);
-                end
-            end
-        end
-    end
-    
-    fprintf('Using %s as the range file\n',range_file);
-end
 
 if strcmpi(profile_input, 'ranges')
     load(range_file); % loads the Ranges variable, which is a data structure

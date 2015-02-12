@@ -1010,7 +1010,9 @@ else
                     % Set the third bit if only one bin had actual data
                     aer_quality = bitset(aer_quality,3);
                 end
-                aer_int = trapz(aerbinmid, aerintbins);
+                % Integrate, converting the aerosol extinction from Mm^-1
+                % to m^-1 and the bin altitudes from km to m.
+                aer_int = trapz(aerbinmid*1e3, aerintbins*1e-6);
             end
         end
         

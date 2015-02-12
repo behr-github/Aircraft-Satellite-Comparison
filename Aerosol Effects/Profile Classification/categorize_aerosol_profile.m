@@ -27,9 +27,9 @@ function [ profile_struct ] = categorize_aerosol_profile(  )
 %%%%% USER INPUT %%%%%
 %%%%%%%%%%%%%%%%%%%%%%
 
-campaign_name = 'arctas-carb';
+campaign_name = 'seac4rs';
 
-[Names, dates, directory, range_files] = merge_field_names(campaign_name);
+[Names, dates, directory, range_file] = merge_field_names(campaign_name);
 
 start_date = '';
 end_date = '';
@@ -44,11 +44,14 @@ end
 %compare heights
 crit_frac = 0.9;
 %mag_crit is the criterion to separate aerosol profiles based on the
-%maximum magnitude of the profile.  
-mag_crit = 100;
+%magnitude of the profile.  Set mag_crit_type to 'max' to use the maximum
+%extinction in Mm^(-1) or 'int' to use the integrated extinction, i.e.
+%column optical depth
+mag_crit_type = 'int';
+mag_crit = 0.2;
 % dz is the minimum separation that the critical altitudes must have to be
 % counted as different.
-dz = 0.25;
+dz = 0.1;
 
 aerosol_field = '';
 no2_field = '';
@@ -58,23 +61,27 @@ profnum_field = '';
 
 merge_directory = '';
 merge_file_pattern = '*_%s_%s_%s.mat';
-range_file = '';
+
 
 DEBUG_LEVEL = 2;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% VARIABLE PREP %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%
+E = JLLErrors;
 
 dates = datenum(start_date):datenum(end_date);
 first_warning_alt_unit = 1;
 
-profile_struct = struct('Column_Fraction_Criterion',crit_frac,'Maximum_Magnitude_Criterion',mag_crit,'dz',dz,...
-    'CoincidentLow',[],'CoincidentLowAlt',[],'CoincidentHigh',[],'CoincidentHighAlt',[],'AerosolAboveLow',[],...
-    'AerosolAboveLowAlt',[],'AerosolAboveHigh',[],'AerosolAboveHighAlt',[],'NO2AboveLow',[],...
-    'NO2AboveLowAlt',[],'NO2AboveHigh',[],'NO2AboveHighAlt',[]);
+profile_struct = struct('Column_Fraction_Criterion',crit_frac,'Magnitude_Criterion_Type',mag_crit_type,'Magnitude_Critical_Value',mag_crit,'dz',dz,...
+    'CoincidentLow',[],'CoincidentLowAlt',[],'CoincidentLowMag',[],'CoincidentHigh',[],'CoincidentHighAlt',[],'CoincidentHighMag',[],'AerosolAboveLow',[],...
+    'AerosolAboveLowAlt',[],'AerosolAboveLowMag',[],'AerosolAboveHigh',[],'AerosolAboveHighAlt',[],'AerosolAboveHighMag',[],'NO2AboveLow',[],...
+    'NO2AboveLowAlt',[],'NO2AboveLowMag',[],'NO2AboveHigh',[],'NO2AboveHighAlt',[],'NO2AboveHighMag',[]);
 
-E = JLLErrors;
+% Check that mag_crit_type is one of the two allowed values
+if ~any(strcmpi(mag_crit_type,{'max','int'}))
+    error(E.badinput('''mag_crit_type'' must be ''max'' or ''int'''));
+end
 
 % If the field names are left empty, use the field names returned from
 % merge_field_names
@@ -100,34 +107,6 @@ if isempty(profnum_field)
     profnum_field = Names.profile_numbers;
 end
 
-% If there is no range file specified AND merge_field_names returned at
-% least one possible file, set range_file to reference a valid file. If
-% there are multiple options, ask the user which one to use (and don't
-% continue until the input is valid).
-if isempty(range_file)
-    n = numel(range_files);
-    if n == 1
-        range_file = range_files{1};
-    elseif n > 1
-        while true
-            opts_nums = 1:n;
-            opts_str = cell(1,n);
-            for a=1:n
-                [~,file] = fileparts(range_files{a});
-                opts_str{a} = sprintf('%d: %s',opts_nums(a),file);
-            end
-            opts_spec = repmat('\t%s\n',1,n);
-            opts_msg = sprintf('Enter the number for which range file to use:\n%s> ',opts_spec);
-            rf_choice = input(sprintf(opts_msg,opts_str{:}));
-            if rf_choice >= 1 && rf_choice <= n
-                range_file = range_files{rf_choice};
-                break;
-            else
-                fprintf('\n\n%d is not a valid option.\n',rf_choice);
-            end
-        end
-    end
-end
 
 %%%%%%%%%%%%%%%%%%%%%
 %%%%% MAIN LOOP %%%%%
@@ -332,26 +311,55 @@ for d=1:numel(dates)
             end
         end
         
+        % Set which value to use for assigning the profile to low or high
+        % amounts of aerosol
+        switch mag_crit_type
+            case 'int'
+                % In this case, integrate the aerosol profiles taking into
+                % account that the units used for extinction are usually
+                % Mm^-1 (and yes, that is inverse megameters) and the
+                % altitude bins are in km.
+                alt_meters = aer_bin_alt * 1000; % convert km to m
+                aers_meters = aer_bins * 1e-6; % convert Mm^-1 to m^-1
+                
+                % Now integrate to get total optical depth of the aerosol
+                % column
+                aer_opt_depth = trapz(alt_meters,aers_meters);
+                
+                % Use this as the criterion value for dividing into low and
+                % high aerosol loading cases
+                mag_value = aer_opt_depth;
+            case 'max'
+                % In this case we're using the maximum extinction value for
+                % a single bin.
+                mag_value = max(aer_bins);
+        end
         
         % Assign the profile to a specific category
-        if abs(z90_aer - z90_no2) < dz && max(aer_bins) < mag_crit;
+        if abs(z90_aer - z90_no2) < dz && mag_value < mag_crit;
             profile_struct.CoincidentLow = [profile_struct.CoincidentLow; profile_id(p,:)];
             profile_struct.CoincidentLowAlt = [profile_struct.CoincidentLowAlt; profile_id(p,:), z90_no2, z90_aer];
-        elseif abs(z90_aer - z90_no2) < dz && max(aer_bins) >= mag_crit;
+            profile_struct.CoincidentLowMag = [profile_struct.CoincidentLowMag; profile_id(p,:), mag_value];
+        elseif abs(z90_aer - z90_no2) < dz && mag_value >= mag_crit;
             profile_struct.CoincidentHigh = [profile_struct.CoincidentHigh; profile_id(p,:)];
             profile_struct.CoincidentHighAlt = [profile_struct.CoincidentHighAlt; profile_id(p,:), z90_no2, z90_aer];
-        elseif z90_aer > z90_no2 + dz && max(aer_bins) < mag_crit;
+            profile_struct.CoincidentHighMag = [profile_struct.CoincidentHighMag; profile_id(p,:), mag_value];
+        elseif z90_aer > z90_no2 + dz && mag_value < mag_crit;
             profile_struct.AerosolAboveLow = [profile_struct.AerosolAboveLow; profile_id(p,:)];
             profile_struct.AerosolAboveLowAlt = [profile_struct.AerosolAboveLowAlt; profile_id(p,:), z90_no2, z90_aer];
-        elseif z90_aer > z90_no2 + dz && max(aer_bins) >= mag_crit;
+            profile_struct.AerosolAboveLowMag = [profile_struct.AerosolAboveLowMag; profile_id(p,:), mag_value];
+        elseif z90_aer > z90_no2 + dz && mag_value >= mag_crit;
             profile_struct.AerosolAboveHigh = [profile_struct.AerosolAboveHigh; profile_id(p,:)];
             profile_struct.AerosolAboveHighAlt = [profile_struct.AerosolAboveHighAlt; profile_id(p,:), z90_no2, z90_aer];
-        elseif z90_no2 > z90_aer + dz && max(aer_bins) < mag_crit;
+            profile_struct.AerosolAboveHighMag = [profile_struct.AerosolAboveHighMag; profile_id(p,:), mag_value];
+        elseif z90_no2 > z90_aer + dz && mag_value < mag_crit;
             profile_struct.NO2AboveLow = [profile_struct.NO2AboveLow; profile_id(p,:)];
             profile_struct.NO2AboveLowAlt = [profile_struct.NO2AboveLowAlt; profile_id(p,:), z90_no2, z90_aer];
-        elseif z90_no2 > z90_aer + dz && max(aer_bins) >= mag_crit;
+            profile_struct.NO2AboveLowMag = [profile_struct.NO2AboveLowMag; profile_id(p,:), mag_value];
+        elseif z90_no2 > z90_aer + dz && mag_value >= mag_crit;
             profile_struct.NO2AboveHigh = [profile_struct.NO2AboveHigh; profile_id(p,:)];
             profile_struct.NO2AboveHighAlt = [profile_struct.NO2AboveHighAlt; profile_id(p,:), z90_no2, z90_aer];
+            profile_struct.NO2AboveHighMag = [profile_struct.NO2AboveHighMag; profile_id(p,:), mag_value];
         end
     end
 end
