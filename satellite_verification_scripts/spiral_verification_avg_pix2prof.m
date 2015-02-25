@@ -243,6 +243,17 @@ merge_datenum = datenum(Merge.metadata.date);
 % new error class.  
 E = JLLErrors;
 
+% This will check for the MATLAB_DISPLAY environmental variable.
+% In my .bashrc file, I've set the alias startmatlab to open a command
+% line Matlab with the -nodisplay argument. This alias also sets the 
+% MATLAB_DISPLAY environmental variable to be 0 so that I can check
+% for it in a script and disable any graphical components.  Here, it's
+% the dialogue asking what to do if the second pressure bin is less
+% than the surface pressure.
+MATLAB_DISPLAY = str2double(getenv('MATLAB_DISPLAY'));
+if isempty(MATLAB_DISPLAY)
+    MATLAB_DISPLAY = 1;
+end
 
 % As long as the campaign name isn't blank, try to get the appropriate
 % field names for the given campaign. Otherwise check that the four merge
@@ -853,18 +864,26 @@ else
         % remaining bin, check with the user to proceed.
         if surface_pres < presbins(2);
             queststring = sprintf('Surface P (%.4f) less than second bin (%.4f). \nLow alt radar nan flag is %d. \n Continue?',surface_pres, presbins(2), bitget(q_flag,6));
-            choice = questdlg(queststring,'Surface pressure','Yes','No','Abort run','No');
+            if MATLAB_DISPLAY
+                choice = questdlg(queststring,'Surface pressure','Yes','No','Abort run','No');
+            else
+                queststring = sprintf('%s: [Yes] / No / Abort run',queststring);
+                choice = input(queststring,'s');
+            end
+            choice = lower(choice);
             switch choice
-                case 'Yes'
+                case 'no'
+                    if DEBUG_LEVEL > 0; fprintf('\tSkipping this column because surface pressure is smaller than the second bin with valid data.\n'); end 
+                    continue
+                case 'abort run'
+                    error('spiral_ver:surface_pres','Surface pressure < second bin.');
+                otherwise % Default to assuming yes.
                     cc = presbins < surface_pres;
                     no2bins = no2bins(cc);
                     presbins = presbins(cc);
                     tempbins = tempbins(cc);
                     no2stderr = no2stderr(cc);
-                case 'No'
-                    continue
-                case 'Abort run'
-                    error('spiral_ver:surface_pres','Surface pressure < second bin.');
+
             end
         elseif surface_pres < presbins(1); 
             % if surface is above the bottom bin center but below the

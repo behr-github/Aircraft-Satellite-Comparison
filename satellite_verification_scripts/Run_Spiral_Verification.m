@@ -18,12 +18,12 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'seac4rs'; % Which campaign this is for. Used to automatically find field names
+campaign_name = 'discover-tx'; % Which campaign this is for. Used to automatically find field names
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
 if ~isempty(campaign_name)
-    [~, dates, directory, range_files] = merge_field_names(campaign_name);
+    [~, dates, directory, range_file] = merge_field_names(campaign_name);
 end
 
 % The dates to run - leave as empty strings to automatically do the entire
@@ -97,9 +97,8 @@ minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to
 % interest.  If range_file is left blank, the program will look at the
 % range files returned from merge_field_names.  If there is one, that one
 % will be used, otherwise the user is presented with his options.
-profile_input = 'ranges';
+profile_input = '';
 profnums = 'fetch'; % set to 'fetch' to use the first input to this function as the profile numbers
-range_file = ''; % the file to use for the UTC ranges
 
 
 % These fields should be consistent across all merges, setting them to
