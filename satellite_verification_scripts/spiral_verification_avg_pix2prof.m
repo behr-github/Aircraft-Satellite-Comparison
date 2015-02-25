@@ -170,12 +170,19 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   clean: Setting this to 0 will not remove any pixels with a fill value -
 %   useful only for debugging why a pixel is rejected.
 %
+% Note to anyone editing this file in the future: there is a subfunction
+% "setReturnVar" that should be used to create the initial instance of the
+% six output variables. It can set them to the null values (nans) or
+% initial fills and empty cell arrays.  If you need to add any fields to
+% db, you should do it in this function.  The reason it is done this way is
+% if fields are added to db in different orders depending on the
+% circumstances it is returned under, Matlab won't be able to concatenate
+% two instances of db with different field orders, so the calling function,
+% Run_Spiral_Verification, will fail.  By centralizing where db is
+% generated for the first time, this shouldn't be a problem.
+%
 %   Josh Laughner <joshlaugh5@gmail.com> 25 Jul 2014
 
-
-% TODO: add a filter for profiles that can be controlled by optional
-% inputs, e.g. how close to the surface, how much breadth of altitude
-% covered, max altitude, lat/lon spread.
 p = inputParser;
 p.addRequired('Merge',@isstruct);
 p.addRequired('Data',@isstruct);
@@ -251,7 +258,7 @@ E = JLLErrors;
 % the dialogue asking what to do if the second pressure bin is less
 % than the surface pressure.
 MATLAB_DISPLAY = str2double(getenv('MATLAB_DISPLAY'));
-if isempty(MATLAB_DISPLAY)
+if isnan(MATLAB_DISPLAY)
     MATLAB_DISPLAY = 1;
 end
 
@@ -374,7 +381,7 @@ if percent_nans > 0.99 || percent_nans_P > 0.99 || percent_nans_T > 0.99;
     end
     % We must skip this merge file if there is no NO2, pressure, or
     % temperature data
-    setReturnVar(uint16(2^15+1),spiral_mode,aerfield,DEBUG_LEVEL);
+    setReturnVar(uint16(2^15+1),spiral_mode,aerfield, 'null', 1, DEBUG_LEVEL);
     return;
 
 else
@@ -392,7 +399,7 @@ else
     tt = local_times >= local2utc('10:45',0) & local_times <= local2utc('16:45',0);
     if sum(tt) == 0 % If no points fall within the time frame, return NaNs and exit
         q_base = bitset(q_base,1,1); % Set the summary and specific quality flags
-        setReturnVar(bitset(q_base,8,1), spiral_mode, aerfield, DEBUG_LEVEL);
+        setReturnVar(bitset(q_base,8,1), spiral_mode, aerfield, 'null', 1, DEBUG_LEVEL);
         return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
@@ -466,7 +473,7 @@ else
         
         % If no profiles are left, return null values and exit
         if sum(yy) == 0
-            setReturnVar(bitset(q_base,11,1), spiral_mode, aerfield,DEBUG_LEVEL);
+            setReturnVar(bitset(q_base,11,1), spiral_mode, aerfield, 'null', 1, DEBUG_LEVEL);
             return
         end
         
@@ -524,7 +531,7 @@ else
         
         % If no profiles are left, return null values and exit
         if sum(yy) == 0
-            setReturnVar(bitset(q_base,11,1), spiral_mode, aerfield,DEBUG_LEVEL);
+            setReturnVar(bitset(q_base,11,1), spiral_mode, aerfield, 'null',1,DEBUG_LEVEL);
             return
         end
         
@@ -611,34 +618,16 @@ else
     % Initialize matrices to hold the values for each pixel measured.  
     n = numel(no2_array);
     
-    prof_lon_out = -9e9*ones(n,1);
-    prof_lat_out = -9e9*ones(n,1);
-    omi_no2_out = -9e9*ones(n,1);
-    behr_no2_out = -9e9*ones(n,1);
-    air_no2_out = -9e9*ones(n,1);
+    % Sets the initial fill values for prof_lon_out, prof_lat_out,
+    % omi_no2_out, behr_no2_out, air_no2_out, and the structure db.  This
+    % helps ensure that the fields for db are always in the right order.
+    % Any fields to be added to db should be added in the setReturnVar
+    % subfunction at the end of this file.
+    setReturnVar(bitset(q_base,11,1), spiral_mode, aerfield, 'init', n, DEBUG_LEVEL);
     
-    
-    
-    db.all_omi = cell(n,1);
-    db.all_behr = cell(n,1);
-    db.quality_flags = cell(n,1);
-    db.coverage_fraction = cell(n,1);
-    db.dist_vectors = cell(n,1);
-    db.loncorn = cell(n,1);
-    db.latcorn = cell(n,1);
-    db.strat_NO2 = cell(n,1);
-    db.modis_cloud = cell(n,1);
-    db.profnums = cell(n,1);
-    db.reject = cell(n,1);
-    db.lon_3km = cell(n,1);
-    db.lat_3km = cell(n,1);
+    % All fields in db are set to an empty cell array with size (n,1), 
     db.start_times = num2cell(start_times);
-    if aerfield ~= 0; 
-        db.aer_max_out = cell(n,1); 
-        db.aer_int_out = cell(n,1);
-        db.aer_quality = cell(n,1);
-    end
-    db.column_error = cell(n,1);
+    
     
     % Also, define Avogadro's number and gas constant;
     Av = 6.022e23; % molec. / mol
@@ -1031,77 +1020,89 @@ else
 
     % Clean up the output variables
     if clean_bool
-        fills = prof_lon_out == -9e9;
-        prof_lon_out = prof_lon_out(~fills);
-        prof_lat_out = prof_lat_out(~fills);
-        omi_no2_out = omi_no2_out(~fills);
-        behr_no2_out = behr_no2_out(~fills);
-        air_no2_out = air_no2_out(~fills);
-        
-        db.all_omi = db.all_omi(~fills);
-        db.all_behr = db.all_behr(~fills);
-        db.quality_flags = db.quality_flags(~fills);
-        db.coverage_fraction = db.coverage_fraction(~fills);
-        db.dist_vectors = db.dist_vectors(~fills);
-        db.latcorn = db.latcorn(~fills);
-        db.loncorn = db.loncorn(~fills);
-        db.strat_NO2 = db.strat_NO2(~fills);
-        db.modis_cloud = db.modis_cloud(~fills);
-        db.profnums = db.profnums(~fills);
-        db.reject = db.reject(~fills);
-        db.lon_3km = db.lon_3km(~fills);
-        db.lat_3km = db.lat_3km(~fills);
-        db.start_times = db.start_times(~fills);
-        if aerfield ~= 0; 
-            db.aer_max_out = db.aer_max_out(~fills); 
-            db.aer_int_out = db.aer_int_out(~fills);
-            db.aer_quality = db.aer_quality(~fills);
-        end
-        db.column_error = db.column_error(~fills);
+        [prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, db] = cleanUpOutput(prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, db);
     end
 end
 end
 
-function setReturnVar(q_flag_val,spiral_mode,aerfield,DEBUG_LEVEL)
+function [lon_out, lat_out, omi_out, behr_out, air_out, db_out] = cleanUpOutput(lon_out, lat_out, omi_out, behr_out, air_out, db_out)
+    fills = lon_out == -9e9 | lat_out == -9e9 | omi_out == -9e9 | behr_out == -9e9 | air_out == -9e9;
+    lon_out = lon_out(~fills);
+    lat_out = lat_out(~fills);
+    omi_out = omi_out(~fills);
+    behr_out = behr_out(~fills);
+    air_out = air_out(~fills);
+    
+    db_fields = fieldnames(db_out);
+    for f=1:numel(db_fields)
+        db_out.(db_fields{f}) = db_out.(db_fields{f})(~fills);
+    end
+end
+
+function setReturnVar(q_flag_val,spiral_mode,aerfield,null_or_init,n,DEBUG_LEVEL)
 % Sets fill return values in the event that this function needs to return
 % early. Needs the value for q_flag (since that represents why the function
 % is returning early) and the value for aerfield, to determine whether to
-% include aerosol data. Also uses DEBUG_LEVEL to print messages.
-if DEBUG_LEVEL>0; fprintf('*** Creating null return values ***\n'); end
+% include aerosol data. null_or_init should be the string 'null' or 'init',
+% which tells it whether to set the values to NaNs or the initial fill
+% values. It needs to know how large to make the arrays if writing initial
+% fill values, so pass n which should be the number of profiles to examine.
+% If not using 'init', n can just be 1. Also uses DEBUG_LEVEL to print
+% messages.
 
 % Double check that the summary bit is set on the quality flag if needed
 if q_flag_val > 0
     q_flag_val = bitset(q_flag_val,1,1);
 end
 
-prof_lon_out = NaN;
-prof_lat_out = NaN;
-omi_no2_out = NaN;
-behr_no2_out = NaN;
-air_no2_out = NaN;
+if strcmpi(null_or_init,'null')
+    if DEBUG_LEVEL>0; fprintf('*** Creating null return values ***\n'); end
+    cellVal = {NaN};
+    cellRangeVal = {NaN(1,2)};
+    cornVal = {NaN(4,1)};
+    regVal = NaN;
+    rejectVal = {uint8(2)};
+    qualVal = {q_flag_val};
+elseif strcmpi(null_or_init,'init')
+    if DEBUG_LEVEL>1; fprintf('*** Creating initial values ***\n'); end
+    cellVal = cell(n,1);
+    cellRangeVal = cell(n,1);
+    cornVal = cell(n,1);
+    regVal = -9e9*ones(n,1);
+    rejectVal = cell(n,1);
+    qualVal = cell(n,1);
+end
 
-db.all_omi = {NaN};
-db.all_behr = {NaN};
-db.quality_flags = {q_flag_val};
-db.coverage_fraction = {NaN};
-db.dist_vectors = {NaN};
-db.loncorn = {NaN(4,1)};
-db.latcorn = {NaN(4,1)};
-db.strat_NO2 = {NaN};
-db.modis_cloud = {NaN};
-if strcmp(spiral_mode,'profnum'); db.profnums = {NaN};
-else db.profnums = {NaN(1,2)};
+
+
+prof_lon_out = regVal;
+prof_lat_out = regVal;
+omi_no2_out = regVal;
+behr_no2_out = regVal;
+air_no2_out = regVal;
+
+db.all_omi = cellVal;
+db.all_behr = cellVal;
+db.quality_flags = qualVal;
+db.coverage_fraction = cellVal;
+db.dist_vectors = cellVal;
+db.loncorn = cornVal;
+db.latcorn = cornVal;
+db.strat_NO2 = cellVal;
+db.modis_cloud = cellVal;
+if strcmp(spiral_mode,'profnum'); db.profnums = cellVal;
+else db.profnums = cellRangeVal;
 end
-db.reject = {uint8(2)};
-db.lon_3km = {NaN};
-db.lat_3km = {NaN};
-db.start_times = {NaN};
+db.reject = rejectVal;
+db.lon_3km = cellVal;
+db.lat_3km = cellVal;
+db.start_times = cellVal;
 if aerfield ~= 0;
-    db.aer_max_out = {NaN};
-    db.aer_int_out = {NaN};
-    db.aer_quality = {NaN};
+    db.aer_max_out = cellVal;
+    db.aer_int_out = cellVal;
+    db.aer_quality = cellVal;
 end
-db.column_error = {NaN};
+db.column_error = cellVal;
 
 assignin('caller','prof_lon_out',prof_lon_out);
 assignin('caller','prof_lat_out',prof_lat_out);
