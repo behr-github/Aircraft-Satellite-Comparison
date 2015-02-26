@@ -578,15 +578,18 @@ else
     TropopausePres = Data2.TropopausePressure(xx);
     vza = Data2.ViewingZenithAngle(xx);
     TerrainPres = Data2.TerrainPressure(xx); %load terrain pressure (in hPa)
-    % Try to load the BEHR column, if it is a field in the Data structure
+    sza = Data2.SolarZenithAngle(xx);
+    % Try to load the BEHR column and MODIS albedo, if they are fields in the Data structure
     try
         behr_no2 = Data2.(behrfield)(xx);
+        alb = Data2.MODISAlbedo(xx);
     catch err
         % If not, fill the imported variable with fill values
         if strcmp(err.identifier,'MATLAB:nonExistentField')
             if DEBUG_LEVEL > 0; fprintf('    No BEHR data for this swath\n'); end
             q_base = bitset(q_base,9,1);
             behr_no2 = -127*ones(size(xx));
+            alb = -127*ones(size(xx));
         else
             rethrow(err)
         end
@@ -674,6 +677,7 @@ else
         tropopause_p = TropopausePres(latlon_logical); vza_p = vza(latlon_logical);
         terrain_pres_p = TerrainPres(latlon_logical);
         modis_cloud_p = modis_cloud(latlon_logical); total_omi_no2_p = total_omi_no2(latlon_logical);
+        sza_p = sza(latlon_logical); alb_p = alb(latlon_logical);
         
         % Check each pixel for rejection criteria.
         pix_xx = true(size(omi_no2_p)); pix_reject = prof_reject*uint8(ones(size(pix_xx)));
@@ -723,6 +727,7 @@ else
         tropopause_p = tropopause_p(pix_xx); vza_p = vza_p(pix_xx);
         modis_cloud_p = modis_cloud_p(pix_xx); total_omi_no2_p = total_omi_no2_p(pix_xx);
         pix_coverage = pix_coverage(pix_xx); terrain_pres_p = terrain_pres_p(pix_xx);
+        sza_p = sza_p(pix_xx); alb_p = alb_p(pix_xx);
         
         % Calculate the distance vector between the mean lat/lon of the
         % lowest 3 km of the profile and each pixel left.  This can be used
@@ -997,6 +1002,8 @@ else
         
         db.all_omi{p} = omi_no2_p;
         db.all_behr{p} = behr_no2_p;
+        db.sza_avg{p} = nanmean(sza_p);
+        db.alb_avg{p} = nanmean(alb_p);
         db.quality_flags{p} = q_flag;
         db.coverage_fraction{p} = pix_coverage;
         db.dist_vectors{p} = dist_vectors;
@@ -1083,6 +1090,8 @@ air_no2_out = regVal;
 
 db.all_omi = cellVal;
 db.all_behr = cellVal;
+db.sza_avg = cellVal;
+db.alb_avg = cellVal;
 db.quality_flags = qualVal;
 db.coverage_fraction = cellVal;
 db.dist_vectors = cellVal;
