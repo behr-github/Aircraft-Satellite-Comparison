@@ -137,9 +137,14 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   tempfield: Defaults to TEMPERATURE.
 %
 %   aerfield: If set to an empty string (default) will try to figure out
-%   the aerosol extinction field based on the dates given. If set to 0,
+%   the aerosol extinction field based on the campaign name. If set to 0,
 %   will not return aerosol data. If set to a string, will use that string
 %   as the field name.
+%
+%   ssafield: If set to an empty string (default) will try to figure out
+%   the aerosol extinction field based on the campaign name. If set to a
+%   string, will use that string as the field name. Note that this will not
+%   be returned if the aerfield value is 0.
 %
 %   cloud_product: Which cloud product (omi or modis or rad) to use in
 %   rejecting pixels.  Defaults to omi.
@@ -346,10 +351,9 @@ altfill = eval(sprintf('Merge.Data.%s.Fill',altfield));
 alt(alt==altfill) = NaN; % Switching to GPS altitude gave fill values for altitude.  These must be removed.
 if aerfield ~= 0
     aer_data = remove_merge_fills(Merge,aerfield);
-end
-if ssafield ~= 0
     ssa_data = remove_merge_fills(Merge,ssafield);
 end
+
 
 % The variable that holds the quality flags
 q_base = uint16(0);
