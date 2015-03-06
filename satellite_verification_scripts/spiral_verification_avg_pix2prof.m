@@ -200,6 +200,7 @@ p.addParameter('radarfield','',@isstr);
 p.addParameter('presfield','PRESSURE',@isstr);
 p.addParameter('tempfield','TEMPERATURE',@isstr)
 p.addParameter('aerfield','', @(x) (ischar(x) || x==1 || x==0) );
+p.addParameter('ssafield','', @(x) (ischar(x) || x==0));
 p.addParameter('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis','rad'})));
 p.addParameter('cloud_frac_max',0.2, @isscalar);
 p.addParameter('rowanomaly','AlwaysByRow',@(x) any(strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'})));
@@ -230,6 +231,7 @@ altfield = pout.altfield;
 radarfield = pout.radarfield;
 presfield = pout.presfield;
 aerfield = pout.aerfield;
+ssafield = pout.ssafield;
 Tfield = pout.tempfield;
 cloud_prod = pout.cloud_product;
 cloud_frac_max = pout.cloud_frac_max;
@@ -267,8 +269,8 @@ end
 % fields we need are set and if not, error out.
 if ~isempty(campaign_name);
     FieldNames = merge_field_names(campaign_name);
-elseif isempty(no2field) || isempty(altfield) || isempty(aerfield) || isempty(radarfield)
-    error(E.badinput('If no campaign is to be specified (using the parameter ''campaign_name'') then parameters no2field, altfield, radarfield, and aerfield must not be empty strings.'));
+elseif isempty(no2field) || isempty(altfield) || isempty(aerfield) || isempty(ssafield) || isempty(radarfield)
+    error(E.badinput('If no campaign is to be specified (using the parameter ''campaign_name'') then parameters no2field, altfield, radarfield, aerfield, and ssafield must not be empty strings.'));
 end
 
 % Deal with the profiles or UTC range input. Set both the spiral_mode
@@ -310,6 +312,10 @@ if isempty(aerfield) % This will not override a 0 passed as this field.
     aerfield = FieldNames.aerosol_extinction;
 end
 
+if isempty(ssafield)
+    ssafield = FieldNames.aerosol_dry_ssa;
+end
+
 % Finally check that user_profnums fullfills the requirements for the
 % profile mode, be it profile numbers or UTC ranges.
 if ~isempty(user_profnums)
@@ -340,6 +346,9 @@ altfill = eval(sprintf('Merge.Data.%s.Fill',altfield));
 alt(alt==altfill) = NaN; % Switching to GPS altitude gave fill values for altitude.  These must be removed.
 if aerfield ~= 0
     aer_data = remove_merge_fills(Merge,aerfield);
+end
+if ssafield ~= 0
+    ssa_data = remove_merge_fills(Merge,ssafield);
 end
 
 % The variable that holds the quality flags
@@ -495,6 +504,7 @@ else
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
         lat_array = cell(s); lon_array = cell(s); profnum_array = cell(s);
         pres_array = cell(s); temp_array = cell(s); aer_array = cell(s);
+        ssa_array = cell(s);
         for a=1:numel(unique_profnums)
             xx = profnum == unique_profnums(a);
             no2_array{a} = no2(xx);
@@ -505,6 +515,7 @@ else
             pres_array{a} = pres(xx);
             temp_array{a} = temperature(xx);
             if aerfield ~= 0; aer_array{a} = aer_data(xx); end
+            if ssafield ~= 0; ssa_array{a} = ssa_data(xx); end
             profnum_array{a} = unique_profnums(a);
         end
     elseif strcmp(spiral_mode,'utcranges')
@@ -541,6 +552,7 @@ else
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
         lat_array = cell(s); lon_array = cell(s); aer_array = cell(s);
         pres_array = cell(s); temp_array = cell(s); profnum_array = cell(s);
+        ssa_array = cell(s);
         for a=1:s(2)
             xx = utc >= ranges_in_time(a,1) & utc <= ranges_in_time(a,2);
             no2_array{a} = no2(xx);
@@ -551,6 +563,7 @@ else
             pres_array{a} = pres(xx);
             temp_array{a} = temperature(xx);
             if aerfield ~= 0; aer_array{a} = aer_data(xx); end
+            if ssafield ~= 0; ssa_array{a} = ssa_data(xx); end
             profnum_array{a} = ranges_in_time(a,:);
         end
     end
@@ -994,6 +1007,19 @@ else
                 % to m^-1 and the bin altitudes from km to m.
                 aer_int = trapz(aerbinmid*1e3, aerintbins*1e-6);
             end
+            
+            % Check the quality of SSA data. If it is all nans, set the
+            % fifth bit. If > 90% is nans, set the sixth bit. In the first
+            % case, return fill values.
+            if all(isnan(ssa_array{p}))
+                aer_quality = bitset(aer_quality,5);
+                aer_ssa = -9e9;
+            elseif sum(isnan(ssa_array{p}))/numel(ssa_array{p}) > 0.9
+                aer_quality = bitset(aer_quality,6);
+                aer_ssa = nanmedian(ssa_array{p});
+            else
+                aer_ssa = nanmedian(ssa_array{p});
+            end
         end
         
         % If any bits in the quality flag are set, set the summary
@@ -1020,6 +1046,7 @@ else
             db.aer_max_out{p} = aer_max; 
             db.aer_int_out{p} = aer_int;
             db.aer_quality{p} = aer_quality;
+            db.aer_median_ssa{p} = aer_ssa;
         end
         db.column_error{p} = column_error;
         
@@ -1110,6 +1137,7 @@ if aerfield ~= 0;
     db.aer_max_out = cellVal;
     db.aer_int_out = cellVal;
     db.aer_quality = cellVal;
+    db.aer_median_ssa = cellVal;
 end
 db.column_error = cellVal;
 

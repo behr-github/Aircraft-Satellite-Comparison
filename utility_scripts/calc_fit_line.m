@@ -48,7 +48,10 @@ if any(isnan(x)) || any(isnan(y))
     x = x(~nans); y = y(~nans);
 end
 
-sem = -1e9;
+% Make x and y into vectors
+x = x(:);
+y = y(:);
+
 switch regression
     case 'y-resid'
         [P(1), P(2), R, sigma_m, sigma_b] = lsqfity(x,y);

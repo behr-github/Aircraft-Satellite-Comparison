@@ -61,6 +61,10 @@ regression = pout.regression;
 mult_sigma_m = pout.sigma_m;
 mult_sigma_b = pout.sigma_b;
 
+% Make x & y into vectors
+x = x(:);
+y = y(:);
+
 if any(isnan(x)) || any(isnan(y))
     warning('NaNs detected, removing any points with a value of NaN for either coordinate');
     nans = isnan(x) | isnan(y);

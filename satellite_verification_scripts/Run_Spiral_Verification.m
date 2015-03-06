@@ -18,7 +18,7 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'discover-tx'; % Which campaign this is for. Used to automatically find field names
+campaign_name = 'discover-ca'; % Which campaign this is for. Used to automatically find field names
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
@@ -45,7 +45,7 @@ end
 % allowed so long as there is enough of the prefix there to uniquely
 % identify 1 file per date in the given directory.
 merge_dir = '';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/BEHR_Files_2014/';
+behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
 behr_prefix = 'OMI_BEHR_omi*';
 
 if isempty(merge_dir)
@@ -69,6 +69,7 @@ tz = 'auto';
 
 no2field = ''; % Which NO2 data field to use. Leave as empty string or 'lif' for our LIF data, set to 'ncar' for NCAR chemiluminescence data, or any other string to override.
 aerfield = ''; % Which aerosol extinction field to use.
+ssafield = ''; % Which aerosol SSA field to use.
 altfield = ''; % Which altitude field to use. Can set to 'pressure' or 'gps' ('' defaults to gps), or override.
 radarfield = ''; % The field for radar altitude.
 
@@ -98,7 +99,7 @@ minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to
 % range files returned from merge_field_names.  If there is one, that one
 % will be used, otherwise the user is presented with his options.
 profile_input = '';
-profnums = 'fetch'; % set to 'fetch' to use the first input to this function as the profile numbers
+profnums = ''; % set to 'fetch' to use the first input to this function as the profile numbers
 
 
 % These fields should be consistent across all merges, setting them to
