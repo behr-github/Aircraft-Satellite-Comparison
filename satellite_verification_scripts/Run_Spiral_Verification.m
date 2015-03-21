@@ -18,7 +18,7 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'discover-ca'; % Which campaign this is for. Used to automatically find field names
+campaign_name = 'discover-md'; % Which campaign this is for. Used to automatically find field names
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
@@ -55,8 +55,8 @@ end
 
 % Start and end times (in military format) for which profiles to consider.
 % General recommendation is +/-1.5 hr from overpass.
-starttime = '10:30';
-endtime = '16:30';
+starttime = '0:00';
+endtime = '23:59';
 
 % Time zone (3 letter abbreviation). Set to 'auto' to determine based on
 % the longitude of the data
