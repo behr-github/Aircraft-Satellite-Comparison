@@ -55,8 +55,8 @@ end
 
 % Start and end times (in military format) for which profiles to consider.
 % General recommendation is +/-1.5 hr from overpass.
-starttime = '0:00';
-endtime = '23:59';
+starttime = '12:00';
+endtime = '15:00';
 
 % Time zone (3 letter abbreviation). Set to 'auto' to determine based on
 % the longitude of the data
@@ -67,14 +67,15 @@ tz = 'auto';
 % Which fields from the merge files to use. Set them to empty strings ('')
 % to automatically guess the correct field for the given campaign.  
 
-no2field = ''; % Which NO2 data field to use. Leave as empty string or 'lif' for our LIF data, set to 'ncar' for NCAR chemiluminescence data, or any other string to override.
+no2field = ''; % Which NO2 data field to use. Leave as empty string or 'lif' for our LIF data, set to 'cl' for chemiluminescence data, or any other string to override.
+conv_fact = 1e-12; % Conversion factor for NO2 data from part-per-whatever to part-per-part. Usually 1e-12, i.e. NO2 data is in pptv.
 aerfield = ''; % Which aerosol extinction field to use.
 ssafield = ''; % Which aerosol SSA field to use.
 altfield = ''; % Which altitude field to use. Can set to 'pressure' or 'gps' ('' defaults to gps), or override.
 radarfield = ''; % The field for radar altitude.
 
 % Variables to allow or disallow the use of a profile
-min_height = 0; % The minimum difference between the top and bottom of a profile. Set to 0 to ignore (max - min > 0 always).
+min_height = 3; % The minimum difference between the top and bottom of a profile. Set to 0 to ignore (max - min > 0 always).
 numBLpoints = 20; % The number of data points required in the bottom 3 km to ensure good BL sampling. Hains et. al. recommends 20.
 minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to ensure good BL sampling. Hains et. al. recommends 0.5 km (500 m).
 
@@ -215,6 +216,7 @@ for d=1:numel(dates)
             'profnums',profnums,... 
             'campaign_name',campaign_name,...
             'no2field',no2field,... 
+            'conv_fact',conv_fact,...
             'aerfield',aerfield,... 
             'ssafield',ssafield,...
             'altfield',altfield,... 
