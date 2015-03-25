@@ -202,8 +202,8 @@ p.addParameter('no2field','',@isstr);
 p.addParameter('conv_fact',1e-12,@isscalar);
 p.addParameter('altfield','',@isstr);
 p.addParameter('radarfield','',@isstr);
-p.addParameter('presfield','PRESSURE',@isstr);
-p.addParameter('tempfield','TEMPERATURE',@isstr)
+p.addParameter('presfield','',@isstr);
+p.addParameter('tempfield','',@isstr)
 p.addParameter('aerfield','', @(x) (ischar(x) || x==1 || x==0) );
 p.addParameter('ssafield','', @(x) (ischar(x) || x==0));
 p.addParameter('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis','rad'})));
@@ -274,8 +274,8 @@ end
 % fields we need are set and if not, error out.
 if ~isempty(campaign_name);
     FieldNames = merge_field_names(campaign_name);
-elseif isempty(no2field) || isempty(altfield) || isempty(aerfield) || isempty(ssafield) || isempty(radarfield)
-    error(E.badinput('If no campaign is to be specified (using the parameter ''campaign_name'') then parameters no2field, altfield, radarfield, aerfield, and ssafield must not be empty strings.'));
+elseif isempty(no2field) || isempty(altfield) || isempty(aerfield) || isempty(ssafield) || isempty(radarfield) || isempty(presfield) || isempty(Tfield)
+    error(E.badinput('If no campaign is to be specified (using the parameter ''campaign_name'') then parameters no2field, altfield, presfield, tempfield, radarfield, aerfield, and ssafield must not be empty strings.'));
 end
 
 % Deal with the profiles or UTC range input. Set both the spiral_mode
@@ -319,6 +319,14 @@ end
 
 if isempty(ssafield)
     ssafield = FieldNames.aerosol_dry_ssa;
+end
+
+if isempty(presfield)
+    presfield = FieldNames.pressure;
+end
+
+if isempty(Tfield)
+    Tfield = FieldNames.temperature;
 end
 
 % Finally check that user_profnums fullfills the requirements for the

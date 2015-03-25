@@ -18,7 +18,7 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'discover-md'; % Which campaign this is for. Used to automatically find field names
+campaign_name = 'discover-ca'; % Which campaign this is for. Used to automatically find field names
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
@@ -46,7 +46,9 @@ end
 % identify 1 file per date in the given directory.
 merge_dir = '';
 behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
+%behr_dir = '/Volumes/share-sat/SAT/OMI/Bare_SP_Files/';
 behr_prefix = 'OMI_BEHR_omi*';
+%behr_prefix = 'OMI_SP*';
 
 if isempty(merge_dir)
     fprintf('Setting merge file directory based on the campaign name.\n');
@@ -75,7 +77,7 @@ altfield = ''; % Which altitude field to use. Can set to 'pressure' or 'gps' (''
 radarfield = ''; % The field for radar altitude.
 
 % Variables to allow or disallow the use of a profile
-min_height = 3; % The minimum difference between the top and bottom of a profile. Set to 0 to ignore (max - min > 0 always).
+min_height = 0; % The minimum difference between the top and bottom of a profile. Set to 0 to ignore (max - min > 0 always).
 numBLpoints = 20; % The number of data points required in the bottom 3 km to ensure good BL sampling. Hains et. al. recommends 20.
 minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to ensure good BL sampling. Hains et. al. recommends 0.5 km (500 m).
 
@@ -103,10 +105,10 @@ profile_input = '';
 profnums = ''; % set to 'fetch' to use the first input to this function as the profile numbers
 
 
-% These fields should be consistent across all merges, setting them to
-% empty strings will not work.
-presfield = 'PRESSURE';
-tempfield = 'TEMPERATURE';
+% Fields for pressure and temperature, set to empty strings to
+% automatically detect.
+presfield = '';
+tempfield = '';
 
 % Satellite variables
 cloud_product = 'omi'; % Can be 'omi', 'modis', or 'rad'
