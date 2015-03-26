@@ -433,7 +433,10 @@ else
     % that bin has a value of NaN), then we'll extrapolate the median of the
     % top ten NO2 measurements to that bin.  In the loop itself, we'll adjust
     % for the changing tropopause pressure.
+    wasextrap = 0;
     if isnan(no2_composite(end))
+        wasextrap = find(~isnan(temp_composite),1,'last');
+        
         M1 = sortrows([pres', no2', temperature']);
         top = find(~isnan(M1(:,2)),10,'first'); % Since lower pressure = higher altitude, we want the first 10 NO2 measurements when sorted by pressure.
         no2_comp_top_med = median(M1(top,2)); temp_comp_top_med = nanmedian(M1(top,3)); pres_comp_top_med = nanmedian(M1(top,1));
@@ -447,11 +450,19 @@ else
         no2_composite(end) = no2_comp_top_med;
         no2_composite_stderr(end) = no2_comp_top_med_stderr;
         
-        % Temperature should have a linear relationship to altitude
-        % (i.e., log(pressure)) up to the tropopause; therefore extrapolate
-        % based on the fit.
+        % For the free troposphere we'll use the full campaign composite.
         nans = isnan(temp_composite);
-        temp_composite(nans) = interp1(log(pres_composite(~nans)), temp_composite(~nans), log(pres_composite(nans)),'linear','extrap');
+        lastbin = find(~nans,1,'last');
+        nans(1:lastbin)=false;
+        tmp = campaign_temperature_profile(campaign_name);
+        temp_composite(nans) = tmp(nans);
+        
+        
+        if isnan(temp_composite(1))
+            nans2 = isnan(temp_composite);
+            temp_composite(nans2) = interp1(log(pres_composite(~nans2)),temp_composite(~nans2),log(pres_composite(nans2)),'linear','extrap');
+        end
+        
         
         % Do any interpolation in log-log space (per. Bucsela et. al. J.
         % Geophys. Res. 2008, 113, D16S31) since pressure has an exponential
@@ -460,6 +471,7 @@ else
         [~, no2_tmp, no2_tmperr] = fill_nans(log(pres_composite),log(no2_composite),log(no2_composite_stderr),'noclip');
         no2_composite = exp(no2_tmp);
         no2_composite_stderr = exp(no2_tmperr);    
+        
         
     end
     
@@ -769,7 +781,7 @@ else
         % Get the standard error of the bins
         [~,~,no2stderr] = bin_omisp_pressure(pres_array{p}, no2_array{p}, 'binmode','mean');
         % Bin the temperature
-        [tempbins, temp_presbins] = bin_omisp_pressure(pres_array{p}, temp_array{p});
+        [tempbins, ~] = bin_omisp_pressure(pres_array{p}, temp_array{p});
         
         
         % Get the top 10 NO2 measurements; if their median value is < 100
@@ -843,15 +855,14 @@ else
         if top_med_no2 < 100;
             no2bins(end) = top_med_no2;
             no2stderr(end) = top_med_no2_stderr;
-            tempbins(end) = top_med_temp;
             topcol = [0 0.7 0];
+            
         else
             % Get the altitude of the highest bin in the profile and find
             % all bins in the composite profile above that
             xx = pres_composite < min(presbins(~isnan(no2bins)));
             no2bins(xx) = no2_composite(xx);
             no2stderr(xx) = no2_composite_stderr(xx);
-            tempbins(xx) = temp_composite(xx);
             topcol = [0.7 0 0.7];
             
             % Set the 3rd bit of the quality flag to 1 to indicate that a
@@ -862,7 +873,13 @@ else
         % Fill in any NaNs with interpolated values
         [tmp_pres, tmp_no2] = fill_nans(log(presbins),log(no2bins),'noclip');
         no2bins = exp(tmp_no2); presbins = exp(tmp_pres);
-        [~, tempbins] = fill_nans(log(temp_presbins),tempbins,'noclip');
+        
+        % Always take temperature from the composite profile for free
+        % troposphere bins
+        nans = isnan(tempbins);
+        lastbin = find(~isnan(tempbins),1,'last');
+        nans(1:lastbin) = false;
+        tempbins(nans) = temp_composite(nans);
         
         if DEBUG_LEVEL > 3; figure(f1); line(no2bins,presbins,'color',topcol,'linewidth',4); end
         
