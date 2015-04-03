@@ -1,4 +1,4 @@
-function [ output ] = categorize_aerosol_profile(no2_in, no2_alt_in, aer_in, aer_alt_in)
+function [ output, expected_classification ] = categorize_aerosol_profile(no2_in, no2_alt_in, aer_in, aer_alt_in)
 %categorize_aerosol_profile Classify the relation of aerosol profile shape to NO2
 %   Bousserez 2014 (ACPD, in preparation) modeled the effect of coincident
 %   aerosol and NO2 layers on the AMF for satellite retireved NO2 columns.
@@ -35,7 +35,7 @@ E = JLLErrors;
 if nargin == 0
     read_merge_bool = true;
     
-    campaign_name = 'seac4rs';
+    campaign_name = 'discover-md';
     
     [Names, dates, directory, range_file] = merge_field_names(campaign_name);
     
@@ -64,7 +64,7 @@ end
 
 %crit_frac is the fraction of the integrated column that we look for to
 %compare heights
-crit_frac = 0.9;
+crit_frac = 0.75;
 %mag_crit is the criterion to separate aerosol profiles based on the
 %magnitude of the profile.  Set mag_crit_type to 'max' to use the maximum
 %extinction in Mm^(-1) or 'int' to use the integrated extinction, i.e.
@@ -87,9 +87,9 @@ if read_merge_bool
     first_warning_alt_unit = 1;
     
     profile_struct = struct('Column_Fraction_Criterion',crit_frac,'Magnitude_Criterion_Type',mag_crit_type,'Magnitude_Critical_Value',mag_crit,'dz',dz,...
-        'CoincidentLow',[],'CoincidentLowAlt',[],'CoincidentLowMag',[],'CoincidentHigh',[],'CoincidentHighAlt',[],'CoincidentHighMag',[],'AerosolAboveLow',[],...
-        'AerosolAboveLowAlt',[],'AerosolAboveLowMag',[],'AerosolAboveHigh',[],'AerosolAboveHighAlt',[],'AerosolAboveHighMag',[],'NO2AboveLow',[],...
-        'NO2AboveLowAlt',[],'NO2AboveLowMag',[],'NO2AboveHigh',[],'NO2AboveHighAlt',[],'NO2AboveHighMag',[]);
+        'CoincidentLow',[],'CoincidentLowAlt',[],'CoincidentLowMag',[],'CoincidentLowDates',{{}},'CoincidentHigh',[],'CoincidentHighAlt',[],'CoincidentHighMag',[],'CoincidentHighDates',{{}},...
+        'AerosolAboveLow',[],'AerosolAboveLowAlt',[],'AerosolAboveLowMag',[],'AerosolAboveLowDates',{{}},'AerosolAboveHigh',[],'AerosolAboveHighAlt',[],'AerosolAboveHighMag',[],'AerosolAboveHighDates',{{}},...
+        'NO2AboveLow',[],'NO2AboveLowAlt',[],'NO2AboveLowMag',[],'NO2AboveLowDates',{{}},'NO2AboveHigh',[],'NO2AboveHighAlt',[],'NO2AboveHighMag',[],'NO2AboveHighDates',{{}});
     
     % Check that mag_crit_type is one of the two allowed values
     if ~any(strcmpi(mag_crit_type,{'max','int'}))
@@ -121,6 +121,15 @@ if read_merge_bool
     end
 end
 
+% If there are two outputs, the user wants to also include a structure with
+% what the profile looks like to them. This is useful in conjunction with
+% tabulate_profile_categories to examine how the profile categorization
+% compared with what it looks like visually.
+if nargout > 1;
+    classifications = {'Coincident','SemiCoincident','AerosolAbove','NO2Above','Ambiguous'};
+    class_date_fields = strcat(classifications,'Dates');
+    expected_classification = make_empty_struct_from_cell([classifications,class_date_fields]);
+end
 
 %%%%%%%%%%%%%%%%%%%%%
 %%%%% MAIN LOOP %%%%%
@@ -229,6 +238,8 @@ for d=1:nd
         [no2_bins, no2_bin_alt] = bin_vertical_profile(prof_no2_alt, prof_no2, 0.25);
         [aer_bins, aer_bin_alt] = bin_vertical_profile(prof_aer_alt, prof_aer, 0.25);
         
+        
+        
         % If only 1 or no bins are not NaNs then we should also skip this
         % profile; there won't be enough information to carry out the
         % analysis
@@ -239,8 +250,22 @@ for d=1:nd
         
         % Otherwise, trim the leading and trailing NaNs and linearly
         % interpolate any middle NaNs
+        if DEBUG_LEVEL > 3 || nargout > 1 
+            fig=figure; 
+            [hax,h1,h2] = plotxx(no2_bins,no2_bin_alt,aer_bins,aer_bin_alt,{'NO2','Aerosol'},{'Alt/NO2','Alt/Aerosol'});
+            set(h1,'Linewidth',5);
+            set(h2,'Linewidth',5);
+            ylim1 = hax(1).YLim; ylim2 = hax(2).YLim;
+            newylim = [0, max(ylim1(2),ylim2(2))];
+            set(hax(1),'ylim',newylim);
+            set(hax(2),'ylim',newylim);
+        end
         [no2_bin_alt, no2_bins] = fill_nans(no2_bin_alt, no2_bins);
         [aer_bin_alt, aer_bins] = fill_nans(aer_bin_alt, aer_bins);
+        if DEBUG_LEVEL > 3 || nargout > 1
+            line(no2_bins,no2_bin_alt,'parent',hax(1),'color','b','linewidth',2);
+            line(aer_bins,aer_bin_alt,'parent',hax(2),'color',[0 0.5 0],'linewidth',2);
+        end
         
         % Now classify the profile: we'll do the full integration for each
         % profile, then integrate over progressively fewer bins until the
@@ -304,12 +329,13 @@ for d=1:nd
                 error(E.callError('imaginary','NO2 root is imaginary'));
             elseif all(~xx)
                 warning('No solution to NO2 profile. Profile will not be categorized.');
-                continue
+                add2output = false;
             elseif all(xx);
                 warning('Both solutions for NO2 profile #%d (%0.2f, %0.2f) fall in expected range. Profile will not be categorized.',profile_id(p,1),z90_no2,z90_no2_neg);
-                continue;
+                add2output = false;
             else
                 z90_no2 = test(xx);
+                add2output = true;
             end
         end
         
@@ -332,83 +358,116 @@ for d=1:nd
                 error(E.callError('imaginary','Aerosol root is imaginary'));
             elseif all(~xx)
                 warning('No solution to aerosol profile. Profile will not be categorized.');
-                continue
+                add2output = false;
             elseif all(xx) > 0;
                 warning('Both solutions for aerosol profile #%d (%0.2f, %0.2f) fall in expected range. Profile will not be categorized.',profile_id(p,1),z90_aer,z90_aer_neg);
-                continue;
+                add2output = false;
             else
                 z90_aer = test(xx);
+                add2output = true;
             end
         end
         
-        % Set which value to use for assigning the profile to low or high
-        % amounts of aerosol
-        switch mag_crit_type
-            case 'int'
-                % In this case, integrate the aerosol profiles taking into
-                % account that the units used for extinction are usually
-                % Mm^-1 (and yes, that is inverse megameters) and the
-                % altitude bins are in km.
-                alt_meters = aer_bin_alt * 1000; % convert km to m
-                aers_meters = aer_bins * 1e-6; % convert Mm^-1 to m^-1
-                
-                % Now integrate to get total optical depth of the aerosol
-                % column
-                aer_opt_depth = trapz(alt_meters,aers_meters);
-                
-                % Use this as the criterion value for dividing into low and
-                % high aerosol loading cases
-                mag_value = aer_opt_depth;
-            case 'max'
-                % In this case we're using the maximum extinction value for
-                % a single bin.
-                mag_value = max(aer_bins);
+        % This boolean will be true only if both the NO2 and aerosol
+        % profiles have a solution. If they don't, we still want to show
+        % the profiles, we just won't save that profile's classification.
+        profile_type = '';
+        if add2output
+            % Set which value to use for assigning the profile to low or high
+            % amounts of aerosol
+            switch mag_crit_type
+                case 'int'
+                    % In this case, integrate the aerosol profiles taking into
+                    % account that the units used for extinction are usually
+                    % Mm^-1 (and yes, that is inverse megameters) and the
+                    % altitude bins are in km.
+                    alt_meters = aer_bin_alt * 1000; % convert km to m
+                    aers_meters = aer_bins * 1e-6; % convert Mm^-1 to m^-1
+                    
+                    % Now integrate to get total optical depth of the aerosol
+                    % column
+                    aer_opt_depth = trapz(alt_meters,aers_meters);
+                    
+                    % Use this as the criterion value for dividing into low and
+                    % high aerosol loading cases
+                    mag_value = aer_opt_depth;
+                case 'max'
+                    % In this case we're using the maximum extinction value for
+                    % a single bin.
+                    mag_value = max(aer_bins);
+            end
+            
+            % Assign the profile to a specific category
+            if abs(z90_aer - z90_no2) < dz && mag_value < mag_crit;
+                if read_merge_bool
+                    profile_struct.CoincidentLow = [profile_struct.CoincidentLow; profile_id(p,:)];
+                    profile_struct.CoincidentLowAlt = [profile_struct.CoincidentLowAlt; profile_id(p,:), z90_no2, z90_aer];
+                    profile_struct.CoincidentLowMag = [profile_struct.CoincidentLowMag; profile_id(p,:), mag_value];
+                    profile_struct.CoincidentLowDates = [profile_struct.CoincidentLowDates; {datestr(dates(d))}];
+                end
+                profile_type = 'coincident';
+            elseif abs(z90_aer - z90_no2) < dz && mag_value >= mag_crit;
+                if read_merge_bool
+                    profile_struct.CoincidentHigh = [profile_struct.CoincidentHigh; profile_id(p,:)];
+                    profile_struct.CoincidentHighAlt = [profile_struct.CoincidentHighAlt; profile_id(p,:), z90_no2, z90_aer];
+                    profile_struct.CoincidentHighMag = [profile_struct.CoincidentHighMag; profile_id(p,:), mag_value];
+                    profile_struct.CoincidentHighDates = [profile_struct.CoincidentHighDates; {datestr(dates(d))}];
+                end
+                profile_type = 'coincident';
+            elseif z90_aer > z90_no2 + dz && mag_value < mag_crit;
+                if read_merge_bool
+                    profile_struct.AerosolAboveLow = [profile_struct.AerosolAboveLow; profile_id(p,:)];
+                    profile_struct.AerosolAboveLowAlt = [profile_struct.AerosolAboveLowAlt; profile_id(p,:), z90_no2, z90_aer];
+                    profile_struct.AerosolAboveLowMag = [profile_struct.AerosolAboveLowMag; profile_id(p,:), mag_value];
+                    profile_struct.AerosolAboveLowDates = [profile_struct.AerosolAboveLowDates; {datestr(dates(d))}];
+                end
+                profile_type = 'aerosol above';
+            elseif z90_aer > z90_no2 + dz && mag_value >= mag_crit;
+                if read_merge_bool
+                    profile_struct.AerosolAboveHigh = [profile_struct.AerosolAboveHigh; profile_id(p,:)];
+                    profile_struct.AerosolAboveHighAlt = [profile_struct.AerosolAboveHighAlt; profile_id(p,:), z90_no2, z90_aer];
+                    profile_struct.AerosolAboveHighMag = [profile_struct.AerosolAboveHighMag; profile_id(p,:), mag_value];
+                    profile_struct.AerosolAboveHighDates = [profile_struct.AerosolAboveHighDates; {datestr(dates(d))}];
+                end
+                profile_type = 'aerosol above';
+            elseif z90_no2 > z90_aer + dz && mag_value < mag_crit;
+                if read_merge_bool
+                    profile_struct.NO2AboveLow = [profile_struct.NO2AboveLow; profile_id(p,:)];
+                    profile_struct.NO2AboveLowAlt = [profile_struct.NO2AboveLowAlt; profile_id(p,:), z90_no2, z90_aer];
+                    profile_struct.NO2AboveLowMag = [profile_struct.NO2AboveLowMag; profile_id(p,:), mag_value];
+                    profile_struct.NO2AboveLowDates = [profile_struct.NO2AboveLowDates; {datestr(dates(d))}];
+                end
+                profile_type = 'no2 above';
+            elseif z90_no2 > z90_aer + dz && mag_value >= mag_crit;
+                if read_merge_bool
+                    profile_struct.NO2AboveHigh = [profile_struct.NO2AboveHigh; profile_id(p,:)];
+                    profile_struct.NO2AboveHighAlt = [profile_struct.NO2AboveHighAlt; profile_id(p,:), z90_no2, z90_aer];
+                    profile_struct.NO2AboveHighMag = [profile_struct.NO2AboveHighMag; profile_id(p,:), mag_value];
+                    profile_struct.NO2AboveHighDates = [profile_struct.NO2AboveHighDates; {datestr(dates(d))}];
+                end
+                profile_type = 'no2 above';
+            end
         end
         
-        % Assign the profile to a specific category
-        if abs(z90_aer - z90_no2) < dz && mag_value < mag_crit;
-            if read_merge_bool
-                profile_struct.CoincidentLow = [profile_struct.CoincidentLow; profile_id(p,:)];
-                profile_struct.CoincidentLowAlt = [profile_struct.CoincidentLowAlt; profile_id(p,:), z90_no2, z90_aer];
-                profile_struct.CoincidentLowMag = [profile_struct.CoincidentLowMag; profile_id(p,:), mag_value];
+        if DEBUG_LEVEL > 3 || nargout > 1
+            title(sprintf('%d: %s',profile_id(p,:),profile_type));
+            if nargout > 1
+                title(sprintf('%d',profile_id(p,:))); % Don't show the profile type if we're manually classifying - we don't want to bias our intuition.
+                while true
+                    user_classification = input('Enter what this profile looks like:\n  1-Coincident\n  2-Semi coincident\n  3-Aerosol Above\n  4-NO2 Above\n  5-Ambiguous\n ?: ');
+                    if user_classification > 0 && user_classification < 6
+                        break
+                    end
+                end
+                
+                expected_classification.(classifications{user_classification}) = cat(1,expected_classification.(classifications{user_classification}),profile_id(p,1));
+                expected_classification.(class_date_fields{user_classification}) = cat(1,expected_classification.(class_date_fields{user_classification}),dates(d));
+            else
+            pause;
             end
-            profile_type = 'coincident';
-        elseif abs(z90_aer - z90_no2) < dz && mag_value >= mag_crit;
-            if read_merge_bool
-                profile_struct.CoincidentHigh = [profile_struct.CoincidentHigh; profile_id(p,:)];
-                profile_struct.CoincidentHighAlt = [profile_struct.CoincidentHighAlt; profile_id(p,:), z90_no2, z90_aer];
-                profile_struct.CoincidentHighMag = [profile_struct.CoincidentHighMag; profile_id(p,:), mag_value];
-            end
-            profile_type = 'coincident';
-        elseif z90_aer > z90_no2 + dz && mag_value < mag_crit;
-            if read_merge_bool
-                profile_struct.AerosolAboveLow = [profile_struct.AerosolAboveLow; profile_id(p,:)];
-                profile_struct.AerosolAboveLowAlt = [profile_struct.AerosolAboveLowAlt; profile_id(p,:), z90_no2, z90_aer];
-                profile_struct.AerosolAboveLowMag = [profile_struct.AerosolAboveLowMag; profile_id(p,:), mag_value];
-            end
-            profile_type = 'aerosol above';
-        elseif z90_aer > z90_no2 + dz && mag_value >= mag_crit;
-            if read_merge_bool
-                profile_struct.AerosolAboveHigh = [profile_struct.AerosolAboveHigh; profile_id(p,:)];
-                profile_struct.AerosolAboveHighAlt = [profile_struct.AerosolAboveHighAlt; profile_id(p,:), z90_no2, z90_aer];
-                profile_struct.AerosolAboveHighMag = [profile_struct.AerosolAboveHighMag; profile_id(p,:), mag_value];
-            end
-            profile_type = 'aerosol above';
-        elseif z90_no2 > z90_aer + dz && mag_value < mag_crit;
-            if read_merge_bool
-                profile_struct.NO2AboveLow = [profile_struct.NO2AboveLow; profile_id(p,:)];
-                profile_struct.NO2AboveLowAlt = [profile_struct.NO2AboveLowAlt; profile_id(p,:), z90_no2, z90_aer];
-                profile_struct.NO2AboveLowMag = [profile_struct.NO2AboveLowMag; profile_id(p,:), mag_value];
-            end
-            profile_type = 'no2 above';
-        elseif z90_no2 > z90_aer + dz && mag_value >= mag_crit;
-            if read_merge_bool
-                profile_struct.NO2AboveHigh = [profile_struct.NO2AboveHigh; profile_id(p,:)];
-                profile_struct.NO2AboveHighAlt = [profile_struct.NO2AboveHighAlt; profile_id(p,:), z90_no2, z90_aer];
-                profile_struct.NO2AboveHighMag = [profile_struct.NO2AboveHighMag; profile_id(p,:), mag_value];
-            end
-            profile_type = 'no2 above';
+            close(fig);
         end
+        
     end
 end
 
@@ -429,6 +488,12 @@ else
         output = profile_struct;
     else
         output = profile_type;
+    end
+end
+
+if nargout > 1
+    for f=1:numel(class_date_fields)
+        expected_classification.(class_date_fields{f}) = cellstr(datestr(expected_classification.(class_date_fields{f})));
     end
 end
 
