@@ -67,7 +67,7 @@ end
 if isempty(no2_in)
     read_merge_bool = true;
     
-    if isempty(campaign_name); campaign_name = 'discover-ca'; end
+    if isempty(campaign_name); campaign_name = 'discover-md'; end
     
     [Names, dates, directory, range_file] = merge_field_names(campaign_name);
     
@@ -282,9 +282,6 @@ for d=1:nd
         if allbutone(isnan(no2_bins)) || allbutone(isnan(aer_bins));
             if DEBUG_LEVEL > 1; fprintf('\tNO2 or aerosol bins for profile #%d on %s have 0 or 1 non-NaN bins\n',profile_id(p,1),datestr(dates(d))); end
             continue 
-        elseif sum(ismember(no2_bin_alt,aer_bin_alt))<2
-            if DEBUG_LEVEL > 1; fprintf('\tNO2 and aerosol profiles for profile #%d on %s have negligible overlap\n',profile_id(p,1),datestr(dates(d))); end
-            continue
         end
         
         % Otherwise, trim the leading and trailing NaNs and linearly
@@ -301,6 +298,10 @@ for d=1:nd
         end
         [no2_bin_alt, no2_bins] = fill_nans(no2_bin_alt, no2_bins);
         [aer_bin_alt, aer_bins] = fill_nans(aer_bin_alt, aer_bins);
+        if sum(ismember(no2_bin_alt,aer_bin_alt))<2
+            if DEBUG_LEVEL > 1; fprintf('\tNO2 and aerosol profiles for profile #%d on %s have negligible overlap\n',profile_id(p,1),datestr(dates(d))); end
+            continue
+        end
         if DEBUG_LEVEL > 3 || nargout > 1
             line(no2_bins,no2_bin_alt,'parent',hax(1),'color','b','linewidth',2);
             line(aer_bins,aer_bin_alt,'parent',hax(2),'color',[0 0.5 0],'linewidth',2);
@@ -405,6 +406,15 @@ for d=1:nd
                 z90_aer = test(xx);
                 add2output = true;
             end
+        end
+        
+        % Check that the crit_frac altitude isn't higher than the highest
+        % bin that has data for the other profile - e.g. if 90% of the NO2
+        % is below 3 km but the aerosol profile only has data up to 2 km,
+        % that's a spurious comparison
+        if add2output && (z90_no2 > max(aer_bin_alt) || z90_aer > max(no2_bin_alt))
+            if DEBUG_LEVEL > 1; fprintf('The critical altitude for one profile is greater than the top of the other profile (#%d on %s), skipping\n',profile_id(p,1),datestr(dates(d))); end
+            add2output = false;
         end
         
         % This boolean will be true only if both the NO2 and aerosol
