@@ -1003,6 +1003,7 @@ else
                     if ~isnan(ground_no2) && ground_no2 > 0;
                         % Only overwrite the median values if there is a
                         % valid
+                        if DEBUG_LEVEL > 1; fprintf('\tInserting ground site NO2 for site #%d\n',sitenum); end
                         no2bins(1) = ground_no2;
                         no2stderr(1) = ground_no2_stderr;
                     else

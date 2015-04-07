@@ -1,4 +1,4 @@
-function [ output, expected_classification ] = categorize_aerosol_profile(no2_in, no2_alt_in, aer_in, aer_alt_in)
+function [ output, expected_classification ] = categorize_aerosol_profile(varargin)
 %categorize_aerosol_profile Classify the relation of aerosol profile shape to NO2
 %   Bousserez 2014 (ACPD, in preparation) modeled the effect of coincident
 %   aerosol and NO2 layers on the AMF for satellite retireved NO2 columns.
@@ -32,7 +32,37 @@ E = JLLErrors;
 %%%%% USER INPUT %%%%%
 %%%%%%%%%%%%%%%%%%%%%%
 
-if nargin == 0
+p = inputParser;
+p.addOptional('no2_in',[],@(x) (isnumeric(x) && isvector(x)));
+p.addOptional('no2_alt_in',[],@(x) (isnumeric(x) && isvector(x)));
+p.addOptional('aer_in',[],@(x) (isnumeric(x) && isvector(x)));
+p.addOptional('aer_alt_in',[],@(x) (isnumeric(x) && isvector(x)));
+p.addParameter('crit_frac',[],@(x) (isnumeric(x) && isscalar(x)));
+p.addParameter('dz',[],@(x) (isnumeric(x) && isscalar(x)));
+p.addParameter('mag_crit',[],@(x) (isnumeric(x) && isscalar(x)));
+p.addParameter('mag_crit_type','', @(x) (ischar(x) && any(strcmp(x,{'int','max'}))));
+p.addParameter('DEBUG_LEVEL',[],@(x) (isnumeric(x) && isscalar(x)));
+
+p.parse(varargin);
+pout = p.Results;
+
+no2_in = pout.no2_in;
+no2_alt_in = pout.no2_alt_in;
+aer_in = pout.aer_in;
+aer_alt_in = pout.aer_alt_in;
+crit_frac = pout.crit_frac;
+dz = pout.dz;
+mag_crit = pout.mag_crit;
+mag_crit_type = pout.mag_crit_type;
+
+% Test that if one optional input is passed they all are
+opt_test = [isempty(no2_in), isempty(no2_alt_in), isempty(aer_in), isempty(aer_alt_in)];
+if ~all(opt_test) && ~all(~opt_test)
+    E.badinput('Some but not all of the optional arguments were specified - it must be all or none.');
+end
+
+
+if isempty(no2_in)
     read_merge_bool = true;
     
     campaign_name = 'discover-md';
@@ -56,24 +86,28 @@ if nargin == 0
     
     merge_directory = '';
     merge_file_pattern = '*_%s_%s_%s.mat';
-elseif nargin == 4
-    read_merge_bool = false;
 else
-    error(E.badinput('Number of inputs to categorize_aerosol_profiles must be 0 or 4.'));
+    read_merge_bool = false;
 end
+
+%%%%%%%%%%%%%%%%%%%%%
+%%%%% USER INPUT %%%%
+%%%%%%%%%%%%%%%%%%%%%
+
+% These will only be used if not specified as parameter inputs. 
 
 %crit_frac is the fraction of the integrated column that we look for to
 %compare heights
-crit_frac = 0.75;
+if isempty(crit_frac); crit_frac = 0.75; end
 %mag_crit is the criterion to separate aerosol profiles based on the
 %magnitude of the profile.  Set mag_crit_type to 'max' to use the maximum
 %extinction in Mm^(-1) or 'int' to use the integrated extinction, i.e.
 %column optical depth
-mag_crit_type = 'int';
-mag_crit = 0.2;
+if isempty(mag_crit_type); mag_crit_type = 'int'; end
+if isempty(mag_crit); mag_crit = 0.2; end
 % dz is the minimum separation that the critical altitudes must have to be
 % counted as different.
-dz = 0.25;
+if isempty(dz); dz = 0.25; end
 
 DEBUG_LEVEL = 2;
 
