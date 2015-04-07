@@ -81,6 +81,9 @@ min_height = 0; % The minimum difference between the top and bottom of a profile
 numBLpoints = 20; % The number of data points required in the bottom 3 km to ensure good BL sampling. Hains et. al. recommends 20.
 minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to ensure good BL sampling. Hains et. al. recommends 0.5 km (500 m).
 
+% Set to 1 to include ground site data, or 0 to use only aircraft data.
+useground = 0;
+
 % These variables are used to subset the aircraft data into profiles used
 % to generate column data to compare against satellite data. 
 %   'profiles' should either be set to: 
@@ -231,6 +234,7 @@ for d=1:numel(dates)
             'min_height',min_height,...
             'numBLpoints',numBLpoints,...
             'minRadarAlt',minRadarAlt,...
+            'useground',useground,...
             'DEBUG_LEVEL',DEBUG_LEVEL,... 
             'clean',clean); 
         date_cell{S} = repmat({curr_date},numel(lon_i{S}),1);
@@ -275,6 +279,7 @@ db_iall.run.row_anomaly = row_anomaly;
 db_iall.run.min_height = min_height;
 db_iall.run.numBLpoints = numBLpoints;
 db_iall.run.minRadarAlt = minRadarAlt;
+db_iall.run.useground = useground;
 
 
 if nargout == 0;

@@ -37,19 +37,21 @@ p.addOptional('no2_in',[],@(x) (isnumeric(x) && isvector(x)));
 p.addOptional('no2_alt_in',[],@(x) (isnumeric(x) && isvector(x)));
 p.addOptional('aer_in',[],@(x) (isnumeric(x) && isvector(x)));
 p.addOptional('aer_alt_in',[],@(x) (isnumeric(x) && isvector(x)));
+p.addParameter('campaign_name','', @ischar);
 p.addParameter('crit_frac',[],@(x) (isnumeric(x) && isscalar(x)));
 p.addParameter('dz',[],@(x) (isnumeric(x) && isscalar(x)));
 p.addParameter('mag_crit',[],@(x) (isnumeric(x) && isscalar(x)));
 p.addParameter('mag_crit_type','', @(x) (ischar(x) && any(strcmp(x,{'int','max'}))));
 p.addParameter('DEBUG_LEVEL',[],@(x) (isnumeric(x) && isscalar(x)));
 
-p.parse(varargin);
+p.parse(varargin{:});
 pout = p.Results;
 
 no2_in = pout.no2_in;
 no2_alt_in = pout.no2_alt_in;
 aer_in = pout.aer_in;
 aer_alt_in = pout.aer_alt_in;
+campaign_name = pout.campaign_name;
 crit_frac = pout.crit_frac;
 dz = pout.dz;
 mag_crit = pout.mag_crit;
@@ -65,7 +67,7 @@ end
 if isempty(no2_in)
     read_merge_bool = true;
     
-    campaign_name = 'discover-md';
+    if isempty(campaign_name); campaign_name = 'discover-ca'; end
     
     [Names, dates, directory, range_file] = merge_field_names(campaign_name);
     
@@ -278,8 +280,11 @@ for d=1:nd
         % profile; there won't be enough information to carry out the
         % analysis
         if allbutone(isnan(no2_bins)) || allbutone(isnan(aer_bins));
-            if DEBUG_LEVEL > 1; fprintf('\tNO2 or Aerosol bins for profile #%d on %s have 0 or 1 non-NaN bins\n',profile_id(p,1),datestr(dates(d))); end
+            if DEBUG_LEVEL > 1; fprintf('\tNO2 or aerosol bins for profile #%d on %s have 0 or 1 non-NaN bins\n',profile_id(p,1),datestr(dates(d))); end
             continue 
+        elseif sum(ismember(no2_bin_alt,aer_bin_alt))<2
+            if DEBUG_LEVEL > 1; fprintf('\tNO2 and aerosol profiles for profile #%d on %s have negligible overlap\n',profile_id(p,1),datestr(dates(d))); end
+            continue
         end
         
         % Otherwise, trim the leading and trailing NaNs and linearly

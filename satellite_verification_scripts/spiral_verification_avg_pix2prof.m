@@ -60,9 +60,7 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %           multiple time zones.
 %       11th: Data is present in the specified time range, but profiles or
 %           ranges are not
-%       12th: Indicates that a ground site NO2 concentration couldn't be
-%           used for this profile, in cases where other profiles are
-%           expected to have a ground site measurement.
+%       12th: Indicates that ground site NO2 was used for this profile.
 %       13-15: Unused
 %       16th: Set if the column was skipped due to < 1% valid
 %           NO2, pressure, or temperature data
@@ -171,6 +169,11 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   go below for the profile to be used. Hains et. al. recommend 0.5 km
 %   which is the default.
 %
+%   useground: boolean whether or not to include ground site data where
+%   available. Defaults to true.  If set to 0, the 12th bit of the quality
+%   flag will still represent whether ground data was available or not, it
+%   just won't be used.
+%
 %   DEBUG_LEVEL: The level of output messages to write; 0 = none, 1 =
 %   normal; 2 = verbose, 3 = (reserved), 4 = plot NO2 profiles colored by
 %   source - intrinsic, extrapolation, composite
@@ -215,6 +218,7 @@ p.addParameter('rowanomaly','AlwaysByRow',@(x) any(strcmp(x,{'AlwaysByRow','Rows
 p.addParameter('min_height',0,@isscalar);
 p.addParameter('numBLpoints',20,@isscalar);
 p.addParameter('minRadarAlt',0.5,@isscalar);
+p.addParameter('useground',1,@isscalar);
 p.addParameter('DEBUG_LEVEL',1,@isscalar);
 p.addParameter('clean',1,@isscalar);
 
@@ -247,6 +251,7 @@ rowanomaly = pout.rowanomaly;
 min_height = pout.min_height;
 numBLpoints = pout.numBLpoints;
 minRadarAlt = pout.minRadarAlt;
+useground = pout.useground;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
 clean_bool = pout.clean;
 
@@ -763,7 +768,7 @@ else
             IN_all = inpolygon(lon_array{p}, lat_array{p}, loncorn_p(:,pix), latcorn_p(:,pix));
             pix_coverage(pix) = sum(IN_all)/numel(no2_array{p});
         end
-        
+        dum=1;
         % If no valid pixels are left, skip this profile.
         if sum(pix_xx)==0;
             continue
@@ -912,7 +917,7 @@ else
         % If the surface pressure is less (i.e. above) the second
         % remaining bin, check with the user to proceed.
         if surface_pres < presbins(2);
-            queststring = sprintf('Surface P (%.4f) less than second bin (%.4f). \nLow alt radar nan flag is %d. \n Continue?',surface_pres, presbins(2), bitget(q_flag,6));
+            queststring = sprintf('Surface P (%.4f) less than second bin (%.4f). \nLow alt radar nan flag (radar and NO2 measurements not coincident) is %d. \n Continue?',surface_pres, presbins(2), bitget(q_flag,6));
             if MATLAB_DISPLAY
                 choice = questdlg(queststring,'Surface pressure','Yes','No','Abort run','No');
             else
@@ -949,7 +954,7 @@ else
             no2bins = no2bins(~no2nans); tempbins = tempbins(~no2nans); presbins = presbins(~no2nans); no2stderr = no2stderr(~no2nans);
             no2bins = [bottom_med_no2, no2bins];
             no2stderr = [bottom_med_no2_stderr, no2stderr];
-            if ~isempty(ground_site_dir) && strcmpi(spiral_mode,'profnum')
+            if ~isempty(ground_site_dir) && strcmpi(spiral_mode,'profnum') 
                 sitenum = (profnum_array{p} - mod(profnum_array{p},1000))/1000;
                 % Handles the CA, TX campaigns where profile numbers start
                 % in the hundred thousands.
@@ -959,7 +964,7 @@ else
                 F = dir(fullfile(ground_site_dir,ground_file));
                 if numel(F) > 1
                     E.toomanyfile('ground site data');
-                elseif numel(F) == 1
+                elseif numel(F) == 1 && useground
                     % Load the merge file; must load it as another
                     % structure because we've already got a Merge variable
                     GM = load(fullfile(ground_site_dir,F(1).name));
@@ -991,12 +996,23 @@ else
                     ground_no2_vec = ground_no2_vec * ground_conv / conv_fact;
                     
                     % Some sites have ~minute averaging, some have ~hourly.
-                    % To cover all cases, we need to consider measurements
-                    % who have a start or end time inside the profile time
-                    % range
+                    % To cover all cases, we first look for measurements
+                    % that have a start or end time inside the profile time
+                    % range, then if there's none of those, look for the
+                    % one that contains the start and end times.
                     xx_start = ground_utc >= start_times(p) & ground_utc < end_times(p);
                     xx_stop = ground_utcstop > start_times(p) & ground_utcstop <= end_times(p);
                     xx_ground = xx_start | xx_stop;
+                    
+                    if sum(xx_ground) == 0
+                        xx_start = start_times(p) > ground_utc & start_times(p) < ground_utcstop;
+                        xx_stop = end_times(p) > ground_utc & end_times(p) < ground_utcstop;
+                        xx_ground = xx_start & xx_stop;
+                    end
+                    
+                    if sum(xx_ground) == 0
+                        E.callError('ground_site_time','Could not match any ground site measurements to the profile')
+                    end
                     
                     ground_no2 = nanmedian(ground_no2_vec(xx_ground));
                     ground_no2_stderr = nanstd(ground_no2_vec(xx_ground))/sqrt(sum(~isnan(ground_no2_vec(xx_ground))));
@@ -1006,15 +1022,13 @@ else
                         if DEBUG_LEVEL > 1; fprintf('\tInserting ground site NO2 for site #%d\n',sitenum); end
                         no2bins(1) = ground_no2;
                         no2stderr(1) = ground_no2_stderr;
-                    else
-                        % Set the 12th quality bit flag here because since
-                        % the average is a NaN we can't use it.
+                        % Set the 12th quality bit flag here to indicate
+                        % that ground NO2 was used in this profile
                         q_flag = bitset(q_flag,12,1);
                     end
-                elseif ~isempty(ground_site_dir)
-                    % Set the 12th quality bit flag here because no files
-                    % were found, but the ground directory exists, so some
-                    % profiles must have ground site data.
+                elseif numel(F) == 1 && ~useground
+                    % If we're not supposed to use the ground NO2 data but
+                    % we could have, still set the 12th quality bit flag.
                     q_flag = bitset(q_flag,12,1);
                 end
                 % If there are no files, continue on with the median NO2 

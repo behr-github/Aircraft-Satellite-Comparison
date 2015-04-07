@@ -42,15 +42,10 @@ end
 
 fns = fieldnames(varargin{1});
 Info.fieldnames = fns;
-data_field_bool = true(size(fns));
-Prof_Struct = varargin{1};
-for a=1:numel(fns)
-    if isscalar(Prof_Struct.(fns{a})) || ischar(Prof_Struct.(fns{a}))
-        data_field_bool(a) = false;
-    end
-end
-Info.data_fields = fns(data_field_bool);
-Info.info_fields = fns(~data_field_bool);
+xx = ~iscellcontents(regexp(fns,'(Coincident|AerosolAbove|NO2Above)'),'isempty');
+
+Info.data_fields = fns(xx);
+Info.info_fields = fns(~xx);
 Info.profnum_fields = {'CoincidentLow','CoincidentHigh','AerosolAboveLow','AerosolAboveHigh','NO2AboveLow','NO2AboveHigh'};
 Info.date_fields = strcat(Info.profnum_fields,'Dates');
 

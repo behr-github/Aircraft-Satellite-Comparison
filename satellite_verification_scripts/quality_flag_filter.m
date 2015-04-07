@@ -1,4 +1,4 @@
-function varargout = quality_flag_filter(bad_flags, qflag_in, varargin)
+function xx = quality_flag_filter(bad_flags, qflag_in, all_or_any )
 
 % quality_flag_filter - filters an arbitrary number of data sets based on
 % their bitarray quality flags.
@@ -14,16 +14,19 @@ function varargout = quality_flag_filter(bad_flags, qflag_in, varargin)
 %   then any measurement with a quality flag where the second bit (**1*) is
 %   1 will be removed.
 %
-%   This returns each data set with offending entries removed and the
-%   quality flags as the final argument.
+%   This returns a logical matrix that is 1 for cells without the flags
+%   set, and 0 otherwise.
 
-% At least one data set must be passed in or this is a silly function
-if numel(varargin) < 1;
-    error('quality_flag_filter:numargs','Must pass at least one data set');
+E = JLLErrors;
+
+if nargin < 3;
+    all_or_any = 'all';
+elseif ~any(strcmpi({'all','any'},all_or_any));
+    E.badinput('all_or_any must be the string ''all'' or ''any''');
+else
+    % Makes the switch-case statement effectively case insensitive later
+    all_or_any = lower(all_or_any);
 end
-
-% Copy varargin 
-data = varargin;
 
 % Check the qflags passed in; if not in a cell array, make them so
 if ~iscell(qflag_in);
@@ -36,19 +39,18 @@ end
 % to remove
 xx = true(size(qflags));
 
+% Create a bit mask that will be used to check each flag. It should be the
+% same class as the flags (e.g. uint16, single, double, int8).
+
+bitmask = eval(sprintf('%s(0)',class(qflag_in{1})));
+for b=1:numel(bad_flags)
+    bitmask = bitset(bitmask,bad_flags(b));
+end
+
 for a=1:numel(qflags)
-    if any(bitand(bad_flags,qflags{a}))
+    if any(bitand(bitmask,qflags{a}))
         xx(a) = false;
     end
 end
-
-qflags_out = qflags(xx);
-data_out = cell(size(data));
-for v=1:numel(data);
-    data_out{v} = data{v}(xx);
-end
-
-varargout = data_out;
-varargout{end+1} = qflags_out;
 
 end
