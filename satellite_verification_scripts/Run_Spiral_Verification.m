@@ -18,7 +18,7 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'discover-ca'; % Which campaign this is for. Used to automatically find field names
+campaign_name = 'discover-tx'; % Which campaign this is for. Used to automatically find field names
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
@@ -45,9 +45,9 @@ end
 % allowed so long as there is enough of the prefix there to uniquely
 % identify 1 file per date in the given directory.
 merge_dir = '';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
+behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR_REPROCESSED/';
 %behr_dir = '/Volumes/share-sat/SAT/OMI/Bare_SP_Files/';
-behr_prefix = 'OMI_BEHR_omi*';
+behr_prefix = 'OMI_BEHR_*';
 %behr_prefix = 'OMI_SP*';
 
 if isempty(merge_dir)
@@ -80,6 +80,9 @@ radarfield = ''; % The field for radar altitude.
 min_height = 0; % The minimum difference between the top and bottom of a profile. Set to 0 to ignore (max - min > 0 always).
 numBLpoints = 20; % The number of data points required in the bottom 3 km to ensure good BL sampling. Hains et. al. recommends 20.
 minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to ensure good BL sampling. Hains et. al. recommends 0.5 km (500 m).
+
+% Set to 1 to include ground site data, or 0 to use only aircraft data.
+useground = 0;
 
 % These variables are used to subset the aircraft data into profiles used
 % to generate column data to compare against satellite data. 
@@ -114,7 +117,7 @@ tempfield = '';
 cloud_product = 'omi'; % Can be 'omi', 'modis', or 'rad'
 cloud_frac_max = 0.2; % Maximum cloud fraction to allow in a pixel. Recommended 0.2 for OMI, 0 for MODIS, and 0.5 for radiance.
 row_anomaly = 'XTrackFlags'; % How to reject for the row anomaly - can be 'AlwaysByRow', 'RowsByTime', 'XTrackFlags', and 'XTrackFlagsLight'
-behrfield = 'BEHRColumnAmountNO2Trop'; % The field in the Data structure with NO2 column data. 
+behrfield = 'BEHR_R_ColumnAmountNO2Trop'; % The field in the Data structure with NO2 column data. 
                                           % Choices include 'ColumnAmountNO2Trop' (OMI SP column), 'BEHRColumnAmountNO2Trop' (BEHR column) 
                                           % and 'BEHR_R_ColumnAmountNO2Trop' only available in files where the column was reprocessed with
                                           % an AMF derived from in-situ measurements.
@@ -144,7 +147,16 @@ end
 % If the user wants to use profnums input to the function, retrieve them
 % here. If there is no input, pass an empty matrix.
 if strcmpi(profnums,'fetch') && nargin > 0
-    profnums = profnums_in;
+    if isempty(profnums_in)
+        % Use a random number here that the profile number will never be
+        % because if an empty set of profile numbers is given, it indicates
+        % that no profiles should be matched; but spiral_verf. uses an
+        % empty matrix to indicate that it shouldn't filter the profile
+        % numbers at all.
+        profnums = -127;
+    else
+        profnums = profnums_in;
+    end
 elseif nargin > 0 && ~strcmp(profnums,'fetch')
     warning('Input detected, but profnums is not set to fetch that input.');
 elseif strcmpi(profnums, 'fetch')
@@ -231,6 +243,7 @@ for d=1:numel(dates)
             'min_height',min_height,...
             'numBLpoints',numBLpoints,...
             'minRadarAlt',minRadarAlt,...
+            'useground',useground,...
             'DEBUG_LEVEL',DEBUG_LEVEL,... 
             'clean',clean); 
         date_cell{S} = repmat({curr_date},numel(lon_i{S}),1);
@@ -275,6 +288,7 @@ db_iall.run.row_anomaly = row_anomaly;
 db_iall.run.min_height = min_height;
 db_iall.run.numBLpoints = numBLpoints;
 db_iall.run.minRadarAlt = minRadarAlt;
+db_iall.run.useground = useground;
 
 
 if nargout == 0;

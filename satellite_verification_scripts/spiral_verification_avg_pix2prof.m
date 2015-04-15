@@ -60,7 +60,8 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %           multiple time zones.
 %       11th: Data is present in the specified time range, but profiles or
 %           ranges are not
-%       12-15: Unused
+%       12th: Indicates that ground site NO2 was used for this profile.
+%       13-15: Unused
 %       16th: Set if the column was skipped due to < 1% valid
 %           NO2, pressure, or temperature data
 %
@@ -168,6 +169,11 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   go below for the profile to be used. Hains et. al. recommend 0.5 km
 %   which is the default.
 %
+%   useground: boolean whether or not to include ground site data where
+%   available. Defaults to true.  If set to 0, the 12th bit of the quality
+%   flag will still represent whether ground data was available or not, it
+%   just won't be used.
+%
 %   DEBUG_LEVEL: The level of output messages to write; 0 = none, 1 =
 %   normal; 2 = verbose, 3 = (reserved), 4 = plot NO2 profiles colored by
 %   source - intrinsic, extrapolation, composite
@@ -212,6 +218,7 @@ p.addParameter('rowanomaly','AlwaysByRow',@(x) any(strcmp(x,{'AlwaysByRow','Rows
 p.addParameter('min_height',0,@isscalar);
 p.addParameter('numBLpoints',20,@isscalar);
 p.addParameter('minRadarAlt',0.5,@isscalar);
+p.addParameter('useground',1,@isscalar);
 p.addParameter('DEBUG_LEVEL',1,@isscalar);
 p.addParameter('clean',1,@isscalar);
 
@@ -244,6 +251,7 @@ rowanomaly = pout.rowanomaly;
 min_height = pout.min_height;
 numBLpoints = pout.numBLpoints;
 minRadarAlt = pout.minRadarAlt;
+useground = pout.useground;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
 clean_bool = pout.clean;
 
@@ -270,10 +278,11 @@ if isnan(MATLAB_DISPLAY)
 end
 
 % As long as the campaign name isn't blank, try to get the appropriate
-% field names for the given campaign. Otherwise check that the four merge
+% field names for the given campaign. Otherwise check that the merge
 % fields we need are set and if not, error out.
+
 if ~isempty(campaign_name);
-    FieldNames = merge_field_names(campaign_name);
+    [FieldNames,~,~,~,ground_site_dir] = merge_field_names(campaign_name);
 elseif isempty(no2field) || isempty(altfield) || isempty(aerfield) || isempty(ssafield) || isempty(radarfield) || isempty(presfield) || isempty(Tfield)
     error(E.badinput('If no campaign is to be specified (using the parameter ''campaign_name'') then parameters no2field, altfield, presfield, tempfield, radarfield, aerfield, and ssafield must not be empty strings.'));
 end
@@ -433,7 +442,10 @@ else
     % that bin has a value of NaN), then we'll extrapolate the median of the
     % top ten NO2 measurements to that bin.  In the loop itself, we'll adjust
     % for the changing tropopause pressure.
+    wasextrap = 0;
     if isnan(no2_composite(end))
+        wasextrap = find(~isnan(temp_composite),1,'last');
+        
         M1 = sortrows([pres', no2', temperature']);
         top = find(~isnan(M1(:,2)),10,'first'); % Since lower pressure = higher altitude, we want the first 10 NO2 measurements when sorted by pressure.
         no2_comp_top_med = median(M1(top,2)); temp_comp_top_med = nanmedian(M1(top,3)); pres_comp_top_med = nanmedian(M1(top,1));
@@ -447,11 +459,19 @@ else
         no2_composite(end) = no2_comp_top_med;
         no2_composite_stderr(end) = no2_comp_top_med_stderr;
         
-        % Temperature should have a linear relationship to altitude
-        % (i.e., log(pressure)) up to the tropopause; therefore extrapolate
-        % based on the fit.
+        % For the free troposphere we'll use the full campaign composite.
         nans = isnan(temp_composite);
-        temp_composite(nans) = interp1(log(pres_composite(~nans)), temp_composite(~nans), log(pres_composite(nans)),'linear','extrap');
+        lastbin = find(~nans,1,'last');
+        nans(1:lastbin)=false;
+        tmp = campaign_temperature_profile(campaign_name);
+        temp_composite(nans) = tmp(nans);
+        
+        
+        if isnan(temp_composite(1))
+            nans2 = isnan(temp_composite);
+            temp_composite(nans2) = interp1(log(pres_composite(~nans2)),temp_composite(~nans2),log(pres_composite(nans2)),'linear','extrap');
+        end
+        
         
         % Do any interpolation in log-log space (per. Bucsela et. al. J.
         % Geophys. Res. 2008, 113, D16S31) since pressure has an exponential
@@ -460,6 +480,7 @@ else
         [~, no2_tmp, no2_tmperr] = fill_nans(log(pres_composite),log(no2_composite),log(no2_composite_stderr),'noclip');
         no2_composite = exp(no2_tmp);
         no2_composite_stderr = exp(no2_tmperr);    
+        
         
     end
     
@@ -470,6 +491,8 @@ else
         % Get all unique profile numbers and their start times
         unique_profnums = unique(profnum(profnum~=0));
         start_times = zeros(numel(unique_profnums),1);
+        end_times = zeros(numel(unique_profnums),1);
+        prof_tzs = cell(numel(unique_profnums),1); % This is only set if using profnums b/c it's only purpose (now) is for ground sites - which only exist when there are profnums.
         for a=1:numel(unique_profnums)
             % If we're using a vector of timezones, get the most common
             % timezone from the profile - we'll treat the whole profile as
@@ -481,8 +504,12 @@ else
                 % Case where we're using a vector of timezones
                 mct = mode(tz(xx));
                 start_times(a) = utc2local_sec(min(utc(xx)),mct);
+                end_times(a) = utc2local_sec(max(utc(xx)),mct);
+                prof_tzs{a} = mct;
             elseif ischar(tz)
                 start_times(a) = utc2local_sec(min(utc(xx)),tz);
+                end_times(a) = utc2local_sec(max(utc(xx)),tz);
+                prof_tzs{a} = tz;
             else
                 error(E.callError('tz_not_recognized','Cannot understand the format of timezones'));
             end
@@ -498,7 +525,8 @@ else
             return
         end
         
-        unique_profnums = unique_profnums(yy); start_times = start_times(yy);
+        unique_profnums = unique_profnums(yy); 
+        start_times = start_times(yy); end_times = end_times(yy);
         
         % If the user passed a list of profile numbers, remove any profile
         % numbers that do not match the list provided.
@@ -560,6 +588,7 @@ else
         
         ranges_in_time = Ranges(yy,:);
         start_times = utc2local_sec(Ranges(yy,1)',0);
+        end_times = utc2local_sec(Ranges(yy,2)',0);
         s = [1,sum(yy)];
         no2_array = cell(s); alt_array = cell(s); radar_array = cell(s);
         lat_array = cell(s); lon_array = cell(s); aer_array = cell(s);
@@ -655,6 +684,7 @@ else
     
     % All fields in db are set to an empty cell array with size (n,1), 
     db.start_times = num2cell(start_times);
+    db.end_times = num2cell(end_times);
     
     
     % Also, define Avogadro's number and gas constant;
@@ -738,7 +768,7 @@ else
             IN_all = inpolygon(lon_array{p}, lat_array{p}, loncorn_p(:,pix), latcorn_p(:,pix));
             pix_coverage(pix) = sum(IN_all)/numel(no2_array{p});
         end
-        
+        dum=1;
         % If no valid pixels are left, skip this profile.
         if sum(pix_xx)==0;
             continue
@@ -769,7 +799,7 @@ else
         % Get the standard error of the bins
         [~,~,no2stderr] = bin_omisp_pressure(pres_array{p}, no2_array{p}, 'binmode','mean');
         % Bin the temperature
-        [tempbins, temp_presbins] = bin_omisp_pressure(pres_array{p}, temp_array{p});
+        [tempbins, ~] = bin_omisp_pressure(pres_array{p}, temp_array{p});
         
         
         % Get the top 10 NO2 measurements; if their median value is < 100
@@ -843,15 +873,14 @@ else
         if top_med_no2 < 100;
             no2bins(end) = top_med_no2;
             no2stderr(end) = top_med_no2_stderr;
-            tempbins(end) = top_med_temp;
             topcol = [0 0.7 0];
+            
         else
             % Get the altitude of the highest bin in the profile and find
             % all bins in the composite profile above that
             xx = pres_composite < min(presbins(~isnan(no2bins)));
             no2bins(xx) = no2_composite(xx);
             no2stderr(xx) = no2_composite_stderr(xx);
-            tempbins(xx) = temp_composite(xx);
             topcol = [0.7 0 0.7];
             
             % Set the 3rd bit of the quality flag to 1 to indicate that a
@@ -862,7 +891,13 @@ else
         % Fill in any NaNs with interpolated values
         [tmp_pres, tmp_no2] = fill_nans(log(presbins),log(no2bins),'noclip');
         no2bins = exp(tmp_no2); presbins = exp(tmp_pres);
-        [~, tempbins] = fill_nans(log(temp_presbins),tempbins,'noclip');
+        
+        % Always take temperature from the composite profile for free
+        % troposphere bins
+        nans = isnan(tempbins);
+        lastbin = find(~isnan(tempbins),1,'last');
+        nans(1:lastbin) = false;
+        tempbins(nans) = temp_composite(nans);
         
         if DEBUG_LEVEL > 3; figure(f1); line(no2bins,presbins,'color',topcol,'linewidth',4); end
         
@@ -882,7 +917,7 @@ else
         % If the surface pressure is less (i.e. above) the second
         % remaining bin, check with the user to proceed.
         if surface_pres < presbins(2);
-            queststring = sprintf('Surface P (%.4f) less than second bin (%.4f). \nLow alt radar nan flag is %d. \n Continue?',surface_pres, presbins(2), bitget(q_flag,6));
+            queststring = sprintf('Surface P (%.4f) less than second bin (%.4f). \nLow alt radar nan flag (radar and NO2 measurements not coincident) is %d. \n Continue?',surface_pres, presbins(2), bitget(q_flag,6));
             if MATLAB_DISPLAY
                 choice = questdlg(queststring,'Surface pressure','Yes','No','Abort run','No');
             else
@@ -912,11 +947,94 @@ else
             nans = isnan(tempbins);
             tempbins(nans) = interp1(log(pres_composite(~nans)), tempbins(~nans), log(pres_composite(nans)),'linear','extrap'); % Just in case the temperature data doesn't cover all the remaining bins, interpolate it
         else
-            % Otherwise, add a "surface bin" to interpolate to.
+            % Otherwise, add a "surface bin" to interpolate to. If there is
+            % ground site data available, use that value. If not, just use
+            % the median of the bottom 10 NO2 measurements.
             no2nans = isnan(no2bins);
             no2bins = no2bins(~no2nans); tempbins = tempbins(~no2nans); presbins = presbins(~no2nans); no2stderr = no2stderr(~no2nans);
             no2bins = [bottom_med_no2, no2bins];
             no2stderr = [bottom_med_no2_stderr, no2stderr];
+            if ~isempty(ground_site_dir) && strcmpi(spiral_mode,'profnum') 
+                sitenum = (profnum_array{p} - mod(profnum_array{p},1000))/1000;
+                % Handles the CA, TX campaigns where profile numbers start
+                % in the hundred thousands.
+                if sitenum > 100; sitenum = mod(sitenum,100); end
+                % Check for any files for this site for this day
+                ground_file = sprintf('*Ground%d*%s.mat',sitenum,regexprep(Merge.metadata.date,'-','_'));
+                F = dir(fullfile(ground_site_dir,ground_file));
+                if numel(F) > 1
+                    E.toomanyfile('ground site data');
+                elseif numel(F) == 1 && useground
+                    % Load the merge file; must load it as another
+                    % structure because we've already got a Merge variable
+                    GM = load(fullfile(ground_site_dir,F(1).name));
+                    ground_utc = remove_merge_fills(GM.Merge,FieldNames.ground_utc{1,sitenum});
+                    ground_utcstop = remove_merge_fills(GM.Merge,FieldNames.ground_utc{3,sitenum});
+                    ground_no2_vec = remove_merge_fills(GM.Merge,FieldNames.ground_no2{sitenum});
+                    
+                    % Convert the UTC values to local time (in seconds
+                    % after midnight). Use the timezone defined for this
+                    % profile.
+                    ground_utc = utc2local_sec(ground_utc,prof_tzs{p});
+                    ground_utcstop = utc2local_sec(ground_utcstop,prof_tzs{p});
+                    
+                    % Convert the ground no2 to the same units as the
+                    % aircraft no2
+                    ground_no2_unit = GM.Merge.Data.(FieldNames.ground_no2{sitenum}).Unit;
+                    i = regexpi(ground_no2_unit,'pp[mbt]');
+                    ground_no2_unit_switch = ground_no2_unit(i:i+2);
+                    switch ground_no2_unit_switch
+                        case {'ppm','ppmv'}
+                            ground_conv = 1e-6;
+                        case {'ppb','ppbv'}
+                            ground_conv = 1e-9;
+                        case {'ppt','pptv'}
+                            ground_conv = 1e-12;
+                        otherwise
+                            E.callError('ground_no2_unit',sprintf('Could not parse the ground NO2 unit: %s',ground_no2_unit));
+                    end
+                    ground_no2_vec = ground_no2_vec * ground_conv / conv_fact;
+                    
+                    % Some sites have ~minute averaging, some have ~hourly.
+                    % To cover all cases, we first look for measurements
+                    % that have a start or end time inside the profile time
+                    % range, then if there's none of those, look for the
+                    % one that contains the start and end times.
+                    xx_start = ground_utc >= start_times(p) & ground_utc < end_times(p);
+                    xx_stop = ground_utcstop > start_times(p) & ground_utcstop <= end_times(p);
+                    xx_ground = xx_start | xx_stop;
+                    
+                    if sum(xx_ground) == 0
+                        xx_start = start_times(p) > ground_utc & start_times(p) < ground_utcstop;
+                        xx_stop = end_times(p) > ground_utc & end_times(p) < ground_utcstop;
+                        xx_ground = xx_start & xx_stop;
+                    end
+                    
+                    if sum(xx_ground) == 0
+                        if DEBUG_LEVEL > 0; 
+                            fprintf('\tNo ground measurements from site #%d overlap profile #%d\n',sitenum,profnum_array{p});
+                        end
+                    else
+                        ground_no2 = nanmedian(ground_no2_vec(xx_ground));
+                        ground_no2_stderr = nanstd(ground_no2_vec(xx_ground))/sqrt(sum(~isnan(ground_no2_vec(xx_ground))));
+                        if ~isnan(ground_no2) && ground_no2 > 0;
+                            % Only overwrite the median values if there is a
+                            % valid
+                            if DEBUG_LEVEL > 1; fprintf('\tInserting ground site NO2 for site #%d\n',sitenum); end
+                            no2bins(1) = ground_no2;
+                            no2stderr(1) = ground_no2_stderr;
+                            % Set the 12th quality bit flag here to indicate
+                            % that ground NO2 was used in this profile
+                            q_flag = bitset(q_flag,12,1);
+                        end
+                    end
+                elseif numel(F) == 1 && ~useground
+                    % If we're not supposed to use the ground NO2 data but
+                    % we could have, still set the 12th quality bit flag.
+                    q_flag = bitset(q_flag,12,1);
+                end
+                % If there are no files, continue on with the median NO2 
+            end
             tempbins = [bottom_med_temp, tempbins];
             presbins = [surface_pres, presbins];
         end
@@ -1145,6 +1263,7 @@ db.reject = rejectVal;
 db.lon_3km = cellVal;
 db.lat_3km = cellVal;
 db.start_times = cellVal;
+db.end_times = cellVal;
 if aerfield ~= 0;
     db.aer_max_out = cellVal;
     db.aer_int_out = cellVal;

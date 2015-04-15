@@ -42,15 +42,10 @@ end
 
 fns = fieldnames(varargin{1});
 Info.fieldnames = fns;
-data_field_bool = true(size(fns));
-Prof_Struct = varargin{1};
-for a=1:numel(fns)
-    if isscalar(Prof_Struct.(fns{a})) || ischar(Prof_Struct.(fns{a}))
-        data_field_bool(a) = false;
-    end
-end
-Info.data_fields = fns(data_field_bool);
-Info.info_fields = fns(~data_field_bool);
+xx = ~iscellcontents(regexp(fns,'(Coincident|AerosolAbove|NO2Above)'),'isempty');
+
+Info.data_fields = fns(xx);
+Info.info_fields = fns(~xx);
 Info.profnum_fields = {'CoincidentLow','CoincidentHigh','AerosolAboveLow','AerosolAboveHigh','NO2AboveLow','NO2AboveHigh'};
 Info.date_fields = strcat(Info.profnum_fields,'Dates');
 
@@ -65,8 +60,13 @@ end
 
 for a=2:numel(varargin)
     next_fns = fieldnames(varargin{a});
-    if numel(next_fns) ~= numel(Info.fieldnames) || ~all(ismember(next_fns, Info.fieldnames))
-        E.badinput('All input structures must have the same fields');
+    if ~all(ismember(Info.profnum_fields,next_fns))
+        pnfs = strjoin(Info.profnum_fields{:});
+        E.badinput('All input structures must contain the fields %s',pnfs);
+    end
+    if ~all(ismember(Info.date_fields,next_fns))
+        dfs = strjoin(Info.date_fields{:});
+        E.badinput('All input structures must contain the fields %s',dfs);
     end
 end
 
@@ -136,7 +136,24 @@ for a=1:numel(varargin)
     
     Criteria.(curr_table_col) = cell(numel(Info.info_fields),1);
     for f=1:numel(Info.info_fields)
-        Criteria.(curr_table_col){f} = curr_struct.(Info.info_fields{f});
+        curr_info = curr_struct.(Info.info_fields{f});
+        if ~iscell(curr_info)
+            Criteria.(curr_table_col){f} = curr_info;
+        else
+            % Handle the possibility of a structure output from the
+            % multiple categorization function that has multiple criteria:
+            % in that case, the criteria will be cell arrays.
+            if all(iscellcontents(curr_info,'isnumeric'))
+               Criteria.(curr_table_col){f} = mat2str(cell2mat(curr_info));
+            else
+                u_curr_info = unique(curr_info);
+                if numel(u_curr_info) == 1
+                    Criteria.(curr_table_col){f} = u_curr_info{1};
+                else
+                    Criteria.(curr_table_col){f} = 'various';
+                end
+            end
+        end
     end
 end
 

@@ -95,14 +95,14 @@ LineData.StdDevB = sigma_b;
 
 % Plot the line of best fit and format the string for the legend with the
 % slope/intercept info and the R^2 value.
-xline = 0:1e16:1e17;
+xline = get(gca,'xlim');%0:1e16:1e17;
 yline = polyval(P,xline);
 h(1) = line(xline,yline,'color','k','linestyle','--','linewidth',2);
 legendcell = {sprintf('Fit: %.4fx + %.2g \nR^2 = %.4f',P(1),P(2),R)};
 
 % Plot the 1:1 line
 if one2one
-    h(end+1) = line(0:1e16:1e17,1:1e16:1e17,'color','r','linestyle',':','linewidth',2);
+    h(end+1) = line(xline,xline,'color','r','linestyle',':','linewidth',2);
     legendcell{end+1} = '1:1';
 end
 

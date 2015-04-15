@@ -3,10 +3,11 @@
 % altitude GUI and save the returned UTC ranges in a structure for that
 % campaign.
 
-start_date = '05/18/2012';
-end_date = '06/22/2012';
+campaign_name = 'seac4rs';
+[~,dates,mat_dir] = merge_field_names(campaign_name);
 
-mat_dir = '/Volumes/share/GROUP/DC3/Matlab files/';
+start_date = dates{1};
+end_date = dates{2};
 
 R = 0;
 datenums = datenum(start_date):datenum(end_date);

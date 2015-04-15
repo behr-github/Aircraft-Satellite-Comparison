@@ -3,8 +3,8 @@
 %   Some of the first Merge files I imported do not have a fill value set
 %   for the UTC field, which messes things up in other scripts.  This will
 %   correct that for.
-
-merge_dir = '/Volumes/share/GROUP/ARCTAS/Matlab Files/';
+[~,~,air_dir,~,ground_dir] = merge_field_names('discover-md');
+merge_dir = ground_dir;
 merge_file_pattern = '*.mat';
 DEBUG_LEVEL = 2;
 
