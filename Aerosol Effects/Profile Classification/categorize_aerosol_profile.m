@@ -350,10 +350,11 @@ for d=1:nd
         m_no2 = (no2_bins(no2_zi+1) - no2_bins(no2_zi)) / (no2_bin_alt(no2_zi+1) - no2_bin_alt(no2_zi));
         m_aer = (aer_bins(aer_zi+1) - aer_bins(aer_zi)) / (aer_bin_alt(aer_zi+1) - aer_bin_alt(aer_zi));
         
+        add2output = true;
         if m_no2 == 0
             z90_no2 = (crit_frac * no2_total - no2_partial + no2_bins(no2_zi) * no2_bin_alt(no2_zi))/no2_bins(no2_zi);
         else
-            % Define a, b, and c for the quadractic formulae
+            % Define a, b, and c for the quadratic formulae
             a_no2 = 0.5 * m_no2;
             b_no2 = -m_no2 * no2_bin_alt(no2_zi) + no2_bins(no2_zi);
             c_no2 = 0.5 * m_no2 * no2_bin_alt(no2_zi)^2 - no2_bins(no2_zi)*no2_bin_alt(no2_zi) + no2_partial - crit_frac * no2_total;
@@ -364,7 +365,7 @@ for d=1:nd
             z90_no2_1 = (-b_no2 + sqrt(b_no2^2 - 4*a_no2*c_no2)) / (2 * a_no2);
             z90_no2_2 = (-b_no2 - sqrt(b_no2^2 - 4*a_no2*c_no2)) / (2 * a_no2);
             test = [z90_no2_1, z90_no2_2];
-            xx = test > no2_bin_alt(no2_zi) & test < no2_bin_alt(no2_zi+1);
+            xx = test >= no2_bin_alt(no2_zi) & test < no2_bin_alt(no2_zi+1);
             if imag(z90_no2_1) || imag(z90_no2_2);
                 error(E.callError('imaginary','NO2 root is imaginary'));
             elseif all(~xx)
@@ -375,14 +376,13 @@ for d=1:nd
                 add2output = false;
             else
                 z90_no2 = test(xx);
-                add2output = true;
             end
         end
         
         if m_aer == 0
-            z90_aer = (crit_frac * no2_total - no2_partial + no2_bins(no2_zi) * no2_bin_alt(no2_zi))/no2_bins(no2_zi);
+            z90_aer = (crit_frac * aer_total - aer_partial + aer_bins(aer_zi) * aer_bin_alt(aer_zi))/aer_bins(aer_zi);
         else
-            % Define a, b, and c for the quadractic formulae
+            % Define a, b, and c for the quadratic formulae
             a_aer = 0.5 * m_aer;
             b_aer = -m_aer * aer_bin_alt(aer_zi) + aer_bins(aer_zi);
             c_aer = 0.5 * m_aer * aer_bin_alt(aer_zi)^2 - aer_bins(aer_zi) * aer_bin_alt(aer_zi)  + aer_partial - crit_frac * aer_total;
@@ -393,7 +393,7 @@ for d=1:nd
             z90_aer_1 = (-b_aer + sqrt(b_aer^2 - 4*a_aer*c_aer)) / (2 * a_aer);
             z90_aer_2 = (-b_aer - sqrt(b_aer^2 - 4*a_aer*c_aer)) / (2 * a_aer);
             test = [z90_aer_1, z90_aer_2];
-            xx = test > aer_bin_alt(aer_zi) & test < aer_bin_alt(aer_zi+1);
+            xx = test >= aer_bin_alt(aer_zi) & test < aer_bin_alt(aer_zi+1);
             if imag(z90_aer_1) || imag(z90_aer_2);
                 error(E.callError('imaginary','Aerosol root is imaginary'));
             elseif all(~xx)
@@ -404,7 +404,6 @@ for d=1:nd
                 add2output = false;
             else
                 z90_aer = test(xx);
-                add2output = true;
             end
         end
         
@@ -414,6 +413,16 @@ for d=1:nd
         % that's a spurious comparison
         if add2output && (z90_no2 > max(aer_bin_alt) || z90_aer > max(no2_bin_alt))
             if DEBUG_LEVEL > 1; fprintf('The critical altitude for one profile is greater than the top of the other profile (#%d on %s), skipping\n',profile_id(p,1),datestr(dates(d))); end
+            add2output = false;
+        end
+        
+        % Also check that the top bin of either profile is greater than its
+        % bottom bin - this is specifically targeted at profiles in
+        % Maryland that don't seem to get sufficient sampling to get out of
+        % the boundary layer. This might need revisited later for campaigns
+        % like SEAC4RS and DC3.
+        if no2_bins(end) > no2_bins(1) || aer_bins(end) > aer_bins(1)
+            if DEBUG_LEVEL > 1; fprintf('One profile top has greater concentration/extinction that its bottom (#%d on %s), skipping\n',profile_id(p,1),datestr(dates(d))); end
             add2output = false;
         end
         

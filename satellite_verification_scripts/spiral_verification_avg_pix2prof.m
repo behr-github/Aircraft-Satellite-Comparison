@@ -1011,20 +1011,22 @@ else
                     end
                     
                     if sum(xx_ground) == 0
-                        E.callError('ground_site_time','Could not match any ground site measurements to the profile')
-                    end
-                    
-                    ground_no2 = nanmedian(ground_no2_vec(xx_ground));
-                    ground_no2_stderr = nanstd(ground_no2_vec(xx_ground))/sqrt(sum(~isnan(ground_no2_vec(xx_ground))));
-                    if ~isnan(ground_no2) && ground_no2 > 0;
-                        % Only overwrite the median values if there is a
-                        % valid
-                        if DEBUG_LEVEL > 1; fprintf('\tInserting ground site NO2 for site #%d\n',sitenum); end
-                        no2bins(1) = ground_no2;
-                        no2stderr(1) = ground_no2_stderr;
-                        % Set the 12th quality bit flag here to indicate
-                        % that ground NO2 was used in this profile
-                        q_flag = bitset(q_flag,12,1);
+                        if DEBUG_LEVEL > 0; 
+                            fprintf('\tNo ground measurements from site #%d overlap profile #%d\n',sitenum,profnum_array{p});
+                        end
+                    else
+                        ground_no2 = nanmedian(ground_no2_vec(xx_ground));
+                        ground_no2_stderr = nanstd(ground_no2_vec(xx_ground))/sqrt(sum(~isnan(ground_no2_vec(xx_ground))));
+                        if ~isnan(ground_no2) && ground_no2 > 0;
+                            % Only overwrite the median values if there is a
+                            % valid
+                            if DEBUG_LEVEL > 1; fprintf('\tInserting ground site NO2 for site #%d\n',sitenum); end
+                            no2bins(1) = ground_no2;
+                            no2stderr(1) = ground_no2_stderr;
+                            % Set the 12th quality bit flag here to indicate
+                            % that ground NO2 was used in this profile
+                            q_flag = bitset(q_flag,12,1);
+                        end
                     end
                 elseif numel(F) == 1 && ~useground
                     % If we're not supposed to use the ground NO2 data but
