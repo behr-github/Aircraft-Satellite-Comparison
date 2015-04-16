@@ -23,7 +23,7 @@ function varargout = select_changing_altitude(varargin)
 
 % Edit the above text to modify the response to help select_changing_altitude
 
-% Last Modified by GUIDE v2.5 17-Jul-2014 10:41:21
+% Last Modified by GUIDE v2.5 10-Mar-2015 16:44:21
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -116,11 +116,15 @@ function set_range_start_Callback(hObject, eventdata, handles)
 if ~isempty(handles.range_index)
     ri = handles.range_index;
     set(handles.feedback_text,'String','Select a new starting point for this range');
-    [x,y] = ginput(1);
-    handles.ranges(ri,1) = x;
-    set(handles.start_val_text,'String',sprintf('%.0f',handles.ranges(ri,1)));
-    handles = redraw_ranges(handles,x);
-    set(handles.feedback_text,'String','');
+    [x,~] = ginput(1);
+    if x < handles.ranges(ri,2)
+        handles.ranges(ri,1) = x;
+        set(handles.start_val_text,'String',sprintf('%.0f',handles.ranges(ri,1)));
+        handles = redraw_ranges(handles,x);
+        set(handles.feedback_text,'String','');
+    else
+        set(handles.feedback_text,'String','Cannot start a range after it ends!');
+    end
 end
 guidata(hObject,handles);
 
@@ -133,10 +137,14 @@ if ~isempty(handles.range_index)
     ri = handles.range_index;
     set(handles.feedback_text,'String','Select a new ending point for this range');
     [x,y] = ginput(1);
-    handles.ranges(ri,2) = x;
-    set(handles.end_val_text,'String',sprintf('%.0f',handles.ranges(ri,2)));
-    handles = redraw_ranges(handles,x);
-    set(handles.feedback_text,'String','');
+    if x > handles.ranges(ri,1)
+        handles.ranges(ri,2) = x;
+        set(handles.end_val_text,'String',sprintf('%.0f',handles.ranges(ri,2)));
+        handles = redraw_ranges(handles,x);
+        set(handles.feedback_text,'String','');
+    else
+        set(handles.feedback_text,'String','Cannot end a range before it starts!');
+    end
 end
 guidata(hObject,handles);
 
@@ -168,9 +176,13 @@ function start_val_text_Callback(hObject, eventdata, handles)
 if ~isempty(handles.range_index);   
     ri = handles.range_index;
     start_val = str2double(get(hObject,'String'));
-    set(handles.feedback_text,'String',sprintf('Changed start value from %.0f to %.0f',handles.ranges(ri,1),start_val));
-    handles.ranges(ri,1) = start_val;
-    handles = redraw_ranges(handles, start_val);
+    if start_val < handles.ranges(ri,2)
+        set(handles.feedback_text,'String',sprintf('Changed start value from %.0f to %.0f',handles.ranges(ri,1),start_val));
+        handles.ranges(ri,1) = start_val;
+        handles = redraw_ranges(handles, start_val);
+    else
+        set(handles.feedback_text,'String','Cannot start a range after it ends!');
+    end
 end
 guidata(hObject, handles);
 
@@ -199,9 +211,13 @@ function end_val_text_Callback(hObject, eventdata, handles)
 if ~isempty(handles.range_index);   
     ri = handles.range_index;
     end_val = str2double(get(hObject,'String'));
-    set(handles.feedback_text,'String',sprintf('Changed end value from %.0f to %.0f',handles.ranges(ri,2),end_val));
-    handles.ranges(ri,2) = end_val;
-    handles = redraw_ranges(handles, end_val);
+    if end_val > handles.ranges(ri,1)
+        set(handles.feedback_text,'String',sprintf('Changed end value from %.0f to %.0f',handles.ranges(ri,2),end_val));
+        handles.ranges(ri,2) = end_val;
+        handles = redraw_ranges(handles, end_val);
+    else
+        set(handles.feedback_text,'String','Cannot end a range before it starts!');
+    end
 end
 guidata(hObject, handles);
 
@@ -233,14 +249,22 @@ function new_range_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 set(handles.feedback_text,'String','Click on the axes to choose the START range.');
-[x,y] = ginput(1);
+[x,~] = ginput(1);
 new_range(1) = x;
-set(handles.start_val_text,'String',sprintf('%.0f',x));
+
 
 set(handles.feedback_text,'String','Click on the axes to choose the END range.');
-[x,y] = ginput(1);
+[x,~] = ginput(1);
 new_range(2) = x;
-set(handles.end_val_text,'String',sprintf('%.0f',x));
+
+% Check that the first value of the range is less than the second value; if
+% not, flip them.
+if new_range(1) > new_range(2)
+    new_range = fliplr(new_range);
+end
+
+set(handles.start_val_text,'String',sprintf('%.0f',new_range(1)));
+set(handles.end_val_text,'String',sprintf('%.0f',new_range(2)));
 set(handles.feedback_text,'String','');
 % 
 % set(handles.set_range_start,'Enable','on');
@@ -372,17 +396,25 @@ end
 
 ranges = S.ranges;
 plot_ylim = S.ylims;
+
+% Redraw the map. This first call will clear it, it will stay cleared
+% unless one of the ranges was clicked on
+S = redraw_map(S,0,0);
+
 for a=1:size(ranges,1)
     if nargin > 1 && pt_x >= ranges(a,1) && pt_x <= ranges(a,2)
         fillcol = 'b';
+        S = redraw_map(S,ranges(a,1),ranges(a,2));
     else
         fillcol = 'r';
     end
     fill_x = [ranges(a,1), ranges(a,1), ranges(a,2), ranges(a,2)];
     fill_y = [plot_ylim(1), plot_ylim(2), plot_ylim(2), plot_ylim(1)];
-    fh = fill(fill_x, fill_y, fillcol,'FaceAlpha',0.4,'PickableParts','none');
+    fh = patch(fill_x, fill_y, fillcol,'FaceAlpha',0.4,'PickableParts','none');
     S.fills = [S.fills, fh];
 end
+
+set(S.alt_plot,'xlim',[floor(0.9*nanmin(S.mapdata.utc)),ceil(1.1*nanmax(S.mapdata.utc))]);
 
 
 
@@ -391,7 +423,7 @@ if ~isempty(S.fills);
     delete(S.fills)
     S.fills = [];
 end
-handles.range_index = 0;
+S.range_index = 0;
 
 % set(handles.set_range_start,'Enable','off');
 %     set(handles.set_range_end, 'Enable','off');
@@ -408,9 +440,21 @@ if ok
     utc = Merge.Data.UTC.Values;
     alt = eval(sprintf('Merge.Data.%s.Values',fieldname));
     fills = eval(sprintf('Merge.Data.%s.Fill',fieldname));
+    lon = Merge.Data.LONGITUDE.Values;
+    lon_fills = Merge.Data.LONGITUDE.Fill;
+    lat = Merge.Data.LATITUDE.Values;
+    lat_fills = Merge.Data.LATITUDE.Fill;
     alt(alt==fills)=NaN;
+    lon(lon==lon_fills)=NaN;
+    lat(lat==lat_fills)=NaN;
+    S.mapdata.lon = lon;
+    S.mapdata.lat = lat;
+    S.mapdata.utc = utc;
+    S.mapdata.alt = alt;
+    S.mapdata.altunit = Merge.Data.(fieldname).Unit;
     hold off
     alt_line = line(utc,alt,'Parent',S.alt_plot,'color',[0 0.5 0],'PickableParts','none');
+    set(S.alt_plot,'xlim',[floor(0.9*nanmin(utc)), ceil(1.1*nanmax(utc))]);
     hold on
     S.lines.alt_line = alt_line;
     S.ylims = get(S.alt_plot,'YLim');
@@ -453,3 +497,17 @@ function S = autoselect_ranges(S)
         S = redraw_ranges(S,mean(ranges(end,:)));
         S.range_index = size(S.ranges,1);
     end
+    
+function S = redraw_map(S,utc_start,utc_end)
+    ax_map = S.map;
+    xx = S.mapdata.utc >= utc_start & S.mapdata.utc <= utc_end;
+    lon = S.mapdata.lon(xx);
+    lat = S.mapdata.lat(xx);
+    alt = S.mapdata.alt(xx);
+    if isfield(S.mapdata,'lhandle')
+        delete(S.mapdata.lhandle);
+    end
+    l = scatter(lon,lat,16,alt,'parent',ax_map);
+    S.mapdata.lhandle = l;
+    S.mapdata.cb = colorbar(ax_map);
+    S.mapdata.cb.Label.String = S.mapdata.altunit;
