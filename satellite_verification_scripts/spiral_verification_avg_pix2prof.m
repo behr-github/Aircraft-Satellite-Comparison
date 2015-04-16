@@ -937,7 +937,6 @@ else
                     presbins = presbins(cc);
                     tempbins = tempbins(cc);
                     no2stderr = no2stderr(cc);
-
             end
         elseif surface_pres < presbins(1); 
             % if surface is above the bottom bin center but below the
@@ -947,97 +946,21 @@ else
             nans = isnan(tempbins);
             tempbins(nans) = interp1(log(pres_composite(~nans)), tempbins(~nans), log(pres_composite(nans)),'linear','extrap'); % Just in case the temperature data doesn't cover all the remaining bins, interpolate it
         else
-            % Otherwise, add a "surface bin" to interpolate to. If there is
-            % ground site data available, use that value. If not, just use
-            % the median of the bottom 10 NO2 measurements.
+            % Otherwise, add a "surface bin" to interpolate to. Initially,
+            % use the median of the bottom 10 NO2 measurements. If there is
+            % ground site data available, we'll add that in a bit.
             no2nans = isnan(no2bins);
             no2bins = no2bins(~no2nans); tempbins = tempbins(~no2nans); presbins = presbins(~no2nans); no2stderr = no2stderr(~no2nans);
             no2bins = [bottom_med_no2, no2bins];
             no2stderr = [bottom_med_no2_stderr, no2stderr];
-            if ~isempty(ground_site_dir) && strcmpi(spiral_mode,'profnum') 
-                sitenum = (profnum_array{p} - mod(profnum_array{p},1000))/1000;
-                % Handles the CA, TX campaigns where profile numbers start
-                % in the hundred thousands.
-                if sitenum > 100; sitenum = mod(sitenum,100); end
-                % Check for any files for this site for this day
-                ground_file = sprintf('*Ground%d*%s.mat',sitenum,regexprep(Merge.metadata.date,'-','_'));
-                F = dir(fullfile(ground_site_dir,ground_file));
-                if numel(F) > 1
-                    E.toomanyfile('ground site data');
-                elseif numel(F) == 1 && useground
-                    % Load the merge file; must load it as another
-                    % structure because we've already got a Merge variable
-                    GM = load(fullfile(ground_site_dir,F(1).name));
-                    ground_utc = remove_merge_fills(GM.Merge,FieldNames.ground_utc{1,sitenum});
-                    ground_utcstop = remove_merge_fills(GM.Merge,FieldNames.ground_utc{3,sitenum});
-                    ground_no2_vec = remove_merge_fills(GM.Merge,FieldNames.ground_no2{sitenum});
-                    
-                    % Convert the UTC values to local time (in seconds
-                    % after midnight). Use the timezone defined for this
-                    % profile.
-                    ground_utc = utc2local_sec(ground_utc,prof_tzs{p});
-                    ground_utcstop = utc2local_sec(ground_utcstop,prof_tzs{p});
-                    
-                    % Convert the ground no2 to the same units as the
-                    % aircraft no2
-                    ground_no2_unit = GM.Merge.Data.(FieldNames.ground_no2{sitenum}).Unit;
-                    i = regexpi(ground_no2_unit,'pp[mbt]');
-                    ground_no2_unit_switch = ground_no2_unit(i:i+2);
-                    switch ground_no2_unit_switch
-                        case {'ppm','ppmv'}
-                            ground_conv = 1e-6;
-                        case {'ppb','ppbv'}
-                            ground_conv = 1e-9;
-                        case {'ppt','pptv'}
-                            ground_conv = 1e-12;
-                        otherwise
-                            E.callError('ground_no2_unit',sprintf('Could not parse the ground NO2 unit: %s',ground_no2_unit));
-                    end
-                    ground_no2_vec = ground_no2_vec * ground_conv / conv_fact;
-                    
-                    % Some sites have ~minute averaging, some have ~hourly.
-                    % To cover all cases, we first look for measurements
-                    % that have a start or end time inside the profile time
-                    % range, then if there's none of those, look for the
-                    % one that contains the start and end times.
-                    xx_start = ground_utc >= start_times(p) & ground_utc < end_times(p);
-                    xx_stop = ground_utcstop > start_times(p) & ground_utcstop <= end_times(p);
-                    xx_ground = xx_start | xx_stop;
-                    
-                    if sum(xx_ground) == 0
-                        xx_start = start_times(p) > ground_utc & start_times(p) < ground_utcstop;
-                        xx_stop = end_times(p) > ground_utc & end_times(p) < ground_utcstop;
-                        xx_ground = xx_start & xx_stop;
-                    end
-                    
-                    if sum(xx_ground) == 0
-                        if DEBUG_LEVEL > 0; 
-                            fprintf('\tNo ground measurements from site #%d overlap profile #%d\n',sitenum,profnum_array{p});
-                        end
-                    else
-                        ground_no2 = nanmedian(ground_no2_vec(xx_ground));
-                        ground_no2_stderr = nanstd(ground_no2_vec(xx_ground))/sqrt(sum(~isnan(ground_no2_vec(xx_ground))));
-                        if ~isnan(ground_no2) && ground_no2 > 0;
-                            % Only overwrite the median values if there is a
-                            % valid
-                            if DEBUG_LEVEL > 1; fprintf('\tInserting ground site NO2 for site #%d\n',sitenum); end
-                            no2bins(1) = ground_no2;
-                            no2stderr(1) = ground_no2_stderr;
-                            % Set the 12th quality bit flag here to indicate
-                            % that ground NO2 was used in this profile
-                            q_flag = bitset(q_flag,12,1);
-                        end
-                    end
-                elseif numel(F) == 1 && ~useground
-                    % If we're not supposed to use the ground NO2 data but
-                    % we could have, still set the 12th quality bit flag.
-                    q_flag = bitset(q_flag,12,1);
-                end
-                % If there are no files, continue on with the median NO2 
-            end
+            
             tempbins = [bottom_med_temp, tempbins];
             presbins = [surface_pres, presbins];
         end
+        
+        % Will insert ground NO2 as the bottom bin, otherwise returns
+        % no2bins and no2stderr unchanged.
+        [no2bins, no2stderr, q_flag] = add_ground_no2(no2bins, no2stderr, q_flag, profnum_array{p}, prof_tzs{p}, spiral_mode, start_times(p), end_times(p), ground_site_dir, conv_fact, useground, Merge, FieldNames, DEBUG_LEVEL);
         
         
         if DEBUG_LEVEL > 3
@@ -1278,4 +1201,90 @@ assignin('caller','omi_no2_out',omi_no2_out);
 assignin('caller','behr_no2_out',behr_no2_out);
 assignin('caller','air_no2_out',air_no2_out);
 assignin('caller','db',db);
+end
+
+function [no2bins, no2stderr, q_flag] = add_ground_no2(no2bins, no2stderr, q_flag, profnum, prof_tz, spiral_mode, start_time, end_time, ground_site_dir, conv_fact, useground, Merge, FieldNames, DEBUG_LEVEL)
+    E = JLLErrors;
+    
+    if ~isempty(ground_site_dir) && strcmpi(spiral_mode,'profnum')
+        sitenum = (profnum - mod(profnum,1000))/1000;
+        % Handles the CA, TX campaigns where profile numbers start
+        % in the hundred thousands.
+        if sitenum > 100; sitenum = mod(sitenum,100); end
+        % Check for any files for this site for this day
+        ground_file = sprintf('*Ground%d*%s.mat',sitenum,regexprep(Merge.metadata.date,'-','_'));
+        F = dir(fullfile(ground_site_dir,ground_file));
+        if numel(F) > 1
+            E.toomanyfile('ground site data');
+        elseif numel(F) == 1 && useground
+            % Load the merge file; must load it as another
+            % structure because we've already got a Merge variable
+            GM = load(fullfile(ground_site_dir,F(1).name));
+            ground_utc = remove_merge_fills(GM.Merge,FieldNames.ground_utc{1,sitenum});
+            ground_utcstop = remove_merge_fills(GM.Merge,FieldNames.ground_utc{3,sitenum});
+            ground_no2_vec = remove_merge_fills(GM.Merge,FieldNames.ground_no2{sitenum});
+
+            % Convert the UTC values to local time (in seconds
+            % after midnight). Use the timezone defined for this
+            % profile.
+            ground_utc = utc2local_sec(ground_utc,prof_tz);
+            ground_utcstop = utc2local_sec(ground_utcstop,prof_tz);
+
+            % Convert the ground no2 to the same units as the
+            % aircraft no2
+            ground_no2_unit = GM.Merge.Data.(FieldNames.ground_no2{sitenum}).Unit;
+            i = regexpi(ground_no2_unit,'pp[mbt]');
+            ground_no2_unit_switch = ground_no2_unit(i:i+2);
+            switch ground_no2_unit_switch
+                case {'ppm','ppmv'}
+                    ground_conv = 1e-6;
+                case {'ppb','ppbv'}
+                    ground_conv = 1e-9;
+                case {'ppt','pptv'}
+                    ground_conv = 1e-12;
+                otherwise
+                    E.callError('ground_no2_unit',sprintf('Could not parse the ground NO2 unit: %s',ground_no2_unit));
+            end
+            ground_no2_vec = ground_no2_vec * ground_conv / conv_fact;
+
+            % Some sites have ~minute averaging, some have ~hourly.
+            % To cover all cases, we first look for measurements
+            % that have a start or end time inside the profile time
+            % range, then if there's none of those, look for the
+            % one that contains the start and end times.
+            xx_start = ground_utc >= start_time & ground_utc < end_time;
+            xx_stop = ground_utcstop > start_time & ground_utcstop <= end_time;
+            xx_ground = xx_start | xx_stop;
+
+            if sum(xx_ground) == 0
+                xx_start = start_time > ground_utc & start_time < ground_utcstop;
+                xx_stop = end_time > ground_utc & end_time < ground_utcstop;
+                xx_ground = xx_start & xx_stop;
+            end
+
+            if sum(xx_ground) == 0
+                if DEBUG_LEVEL > 0;
+                    fprintf('\tNo ground measurements from site #%d overlap profile #%d\n',sitenum,profnum);
+                end
+            else
+                ground_no2 = nanmedian(ground_no2_vec(xx_ground));
+                ground_no2_stderr = nanstd(ground_no2_vec(xx_ground))/sqrt(sum(~isnan(ground_no2_vec(xx_ground))));
+                if ~isnan(ground_no2) && ground_no2 > 0;
+                    % Only overwrite the median values if there is a
+                    % valid
+                    if DEBUG_LEVEL > 1; fprintf('\tInserting ground site NO2 for site #%d\n',sitenum); end
+                    no2bins(1) = ground_no2;
+                    no2stderr(1) = ground_no2_stderr;
+                    % Set the 12th quality bit flag here to indicate
+                    % that ground NO2 was used in this profile
+                    q_flag = bitset(q_flag,12,1);
+                end
+            end
+        elseif numel(F) == 1 && ~useground
+            % If we're not supposed to use the ground NO2 data but
+            % we could have, still set the 12th quality bit flag.
+            q_flag = bitset(q_flag,12,1);
+        end
+        % If there are no files, continue on with the median NO2
+    end
 end
