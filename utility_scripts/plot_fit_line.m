@@ -88,17 +88,20 @@ switch regression
         R = R^2;
 end
 
+p_val = p_val_slope(P(1),sigma_m,sum(~isnan(x) & ~isnan(y)));
+
 LineData.P = P;
 LineData.R2 = R;
 LineData.StdDevM = sigma_m;
 LineData.StdDevB = sigma_b;
+LineData.p_value = p_val;
 
 % Plot the line of best fit and format the string for the legend with the
 % slope/intercept info and the R^2 value.
 xline = get(gca,'xlim');%0:1e16:1e17;
 yline = polyval(P,xline);
 h(1) = line(xline,yline,'color','k','linestyle','--','linewidth',2);
-legendcell = {sprintf('Fit: %.4fx + %.2g \nR^2 = %.4f',P(1),P(2),R)};
+legendcell = {sprintf('Fit: %.4fx + %.2g \nR^2 = %.4f (p = %.2f)',P(1),P(2),R,p_val)};
 
 % Plot the 1:1 line
 if one2one

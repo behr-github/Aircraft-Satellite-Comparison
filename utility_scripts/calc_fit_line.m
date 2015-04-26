@@ -30,6 +30,17 @@ function [ line_x, line_y, legend_str, LineData ] = calc_fit_line( x, y, varargi
 %
 %   http://www.unc.edu/courses/2007spring/biol/145/001/docs/lectures/Nov5.html
 %   has a good explanation of the various sorts of regressions.
+%
+%   Since this function does not necessarily expect a figure to be open, it
+%   will check if there is one or not; if not, it will use the
+%   default_x_coord variable (below) to generate the x & y vectors. Feel
+%   free to change this to a good default range of values for your
+%   purposes. If there is a figure extant, it will make the x-coordinates
+%   the x-limits of that figure, unless you change
+%   "use_figure_if_available" to false (below).
+
+default_x_coord = 0:1e16:1e17;
+use_figure_if_available = true;
 
 p = inputParser;
 p.addRequired('x',@isnumeric);
@@ -69,14 +80,21 @@ switch regression
         R = R^2;
 end
 
+p_val = p_val_slope(P(1), sigma_m, sum(~isnan(x) & ~isnan(y)));
+
 LineData.P = P;
 LineData.R2 = R;
 LineData.StdDevM = sigma_m;
 LineData.StdDevB = sigma_b;
+LineData.p_value = p_val;
 
-line_x = 0:1e16:1e17;
+if isempty(get(0,'children')) && use_figure_if_available
+    line_x = default_x_coord;
+else
+    line_x = get(gca,'xlim');
+end
 line_y = polyval(P,line_x);
-legend_str = sprintf('Fit: %.4fx + %.2g \nR^2 = %.4f',P(1),P(2),R);
+legend_str = sprintf('Fit: %.4fx + %.2g \nR^2 = %.4f (p = %.2f)',P(1),P(2),R,p_val);
 
 end
 

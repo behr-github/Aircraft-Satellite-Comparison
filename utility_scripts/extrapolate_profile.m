@@ -66,20 +66,20 @@ function [ data_bins, pres_bins, flag ] = extrapolate_profile( data_in, pres_in,
 %   Josh Laughner <joshlaugh5@gmail.com> Aug 2014
 
 p = inputParser;
-p.addParamValue('shape','exp',@(x) any(strcmpi(x,{'exp','linear'})));
-p.addParamValue('surfacePressure',1020,@isscalar);
-p.addParamValue('bottom','median',@(x) any(strcmp(x,{'median','fit','ground','none'})));
-p.addParamValue('top','median',@(x) any(strcmp(x,{'median','fit','wrf','wrf-scaled','none'})));
-p.addParamValue('npoints',10,@isscalar);
-p.addParamValue('city','',@isstr);
-p.addParamValue('date','',@(x) ischar(x) || isscalar(x));
-p.addParamValue('sitenum',[],@isscalar);
-p.addParamValue('utc',[],@isscalar);
-p.addParamValue('ground_convert',[],@(x) (isempty(x) || isscalar(x)));
-p.addParamValue('month','',@(x) (ischar(x) || isscalar(x)));
-p.addParamValue('conversion',1e-12,@isscalar);
-p.addParamValue('lat',[],@isnumeric);
-p.addParamValue('lon',[],@isnumeric);
+p.addParameter('shape','exp',@(x) any(strcmpi(x,{'exp','linear'})));
+p.addParameter('surfacePressure',1020,@isscalar);
+p.addParameter('bottom','median',@(x) any(strcmp(x,{'median','fit','ground','none'})));
+p.addParameter('top','median',@(x) any(strcmp(x,{'median','fit','wrf','wrf-scaled','none'})));
+p.addParameter('npoints',10,@isscalar);
+p.addParameter('city','',@isstr);
+p.addParameter('date','',@(x) ischar(x) || isscalar(x));
+p.addParameter('sitenum',[],@isscalar);
+p.addParameter('utc',[],@isscalar);
+p.addParameter('ground_convert',[],@(x) (isempty(x) || isscalar(x)));
+p.addParameter('month','',@(x) (ischar(x) || isscalar(x)));
+p.addParameter('conversion',1e-12,@isscalar);
+p.addParameter('lat',[],@isnumeric);
+p.addParameter('lon',[],@isnumeric);
 p.parse(varargin{:});
 pout = p.Results;
 
@@ -142,7 +142,7 @@ if any(strcmp(top,{'wrf','wrf-scaled'}))
     
     % Store the WRF-Profile file path.  The directory will need to be
     % recoded if it moves.
-    wrf_profile_file = sprintf('/Volumes/share/GROUP/SAT/BEHR/Monthly_NO2_Profiles/%s',wrf_profile_name);
+    wrf_profile_file = sprintf('/Volumes/share-sat/SAT/BEHR/Monthly_NO2_Profiles/%s',wrf_profile_name);
 end
 
 % Flag that will be set to 1 if any problems arise.
