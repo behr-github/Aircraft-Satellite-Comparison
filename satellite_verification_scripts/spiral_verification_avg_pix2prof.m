@@ -367,7 +367,12 @@ temperature = remove_merge_fills(Merge,Tfield,'alt',altfield);
 altfill = eval(sprintf('Merge.Data.%s.Fill',altfield));
 alt(alt==altfill) = NaN; % Switching to GPS altitude gave fill values for altitude.  These must be removed.
 if aerfield ~= 0
-    aer_data = remove_merge_fills(Merge,aerfield);
+    if ~strcmp(aerfield,FieldNames.aerosol_extinction)
+        warning('Aerosol data will not be corrected for measured wavelength')
+        aer_data = remove_merge_fills(Merge,aerfield);
+    else
+        aer_data = angstrom_exponent_correction(Merge,campaign_name);
+    end
     ssa_data = remove_merge_fills(Merge,ssafield);
 end
 

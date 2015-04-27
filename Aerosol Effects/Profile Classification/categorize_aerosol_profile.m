@@ -198,8 +198,10 @@ for d=1:nd
             Merge = S_NO2.Merge;
         end
         
-        % Load the day's aerosol, NO2, and altitude data
-        [ext,~,aer_alt] = remove_merge_fills( Merge, aerosol_field, 'alt', alt_field );
+        % Load the day's aerosol, NO2, and altitude data. Correct the
+        % aerosol extinction data to 440 nm
+        ext = angstrom_exponent_correction(Merge,campaign_name);
+        [~,~,aer_alt] = remove_merge_fills( Merge, aerosol_field, 'alt', alt_field );
         aer_alt = aer_alt * alt_conversion;
         if ~strcmp('km',Merge.Data.(alt_field).Unit) && first_warning_alt_unit;
             warning('Altitude field for merge may not be in km.  Ensure correct conversion factor is being applied');
