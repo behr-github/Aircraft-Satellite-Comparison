@@ -22,7 +22,7 @@ function varargout = aerosol_no2_profiles_gui(varargin)
 
 % Edit the above text to modify the response to help aerosol_no2_profiles_gui
 
-% Last Modified by GUIDE v2.5 03-Apr-2015 11:19:46
+% Last Modified by GUIDE v2.5 28-Apr-2015 10:52:57
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -66,6 +66,8 @@ handles = load_tables(handles,varargin);
 % in the table. We'll initialize it to 0, and test later that this number
 % is > 0. This will be set in cat_table_CellSelectionCallback
 handles.curr_row = 0;
+% Also initialize the value for the "angstrom exponent correction" checkbox
+handles.use_angstrom_exp = false;
 
 %%%% GUI INNARDS %%%%%
 
@@ -152,6 +154,16 @@ else
     fprintf('No row currently selected\n')
 end
 
+% --- Executes on button press in angstrom_checkbox.
+function angstrom_checkbox_Callback(hObject, eventdata, handles)
+% hObject    handle to angstrom_checkbox (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of angstrom_checkbox
+handles.use_angstrom_exp = get(hObject,'Value');
+guidata(hObject,handles);
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% ADDITIONAL FUNCTIONS %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -184,8 +196,13 @@ F = wildcard_load(mdir,file_pat,sel_date,'Merge');
 
 profnums = remove_merge_fills(F.Merge,Names.profile_numbers);
 no2 = remove_merge_fills(F.Merge,Names.no2_lif);
-aer = remove_merge_fills(F.Merge,Names.aerosol_extinction);
 alt = remove_merge_fills(F.Merge,Names.gps_alt);
+
+if S.use_angstrom_exp
+    aer = angstrom_exponent_correction(F.Merge,campaign_name);
+else
+    aer = remove_merge_fills(F.Merge,Names.aerosol_extinction);
+end
 
 xx = profnums == sel_profnum;
 prof_no2 = no2(xx);
@@ -210,4 +227,5 @@ set(hax(2),'ylim',newylim);
 
 line(no2_bins,no2_bin_alt,'parent',hax(1),'color','b','linewidth',2);
 line(aer_bins,aer_bin_alt,'parent',hax(2),'color',[0 0.5 0],'linewidth',2);
+
 
