@@ -18,7 +18,7 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'discover-tx'; % Which campaign this is for. Used to automatically find field names
+campaign_name = 'discover-md'; % Which campaign this is for. Used to automatically find field names
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
@@ -45,9 +45,9 @@ end
 % allowed so long as there is enough of the prefix there to uniquely
 % identify 1 file per date in the given directory.
 merge_dir = '';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR_REPROCESSED/';
+behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
 %behr_dir = '/Volumes/share-sat/SAT/OMI/Bare_SP_Files/';
-behr_prefix = 'OMI_BEHR_*';
+behr_prefix = 'OMI_BEHR_omi*';
 %behr_prefix = 'OMI_SP*';
 
 if isempty(merge_dir)
@@ -69,7 +69,7 @@ tz = 'auto';
 % Which fields from the merge files to use. Set them to empty strings ('')
 % to automatically guess the correct field for the given campaign.  
 
-no2field = ''; % Which NO2 data field to use. Leave as empty string or 'lif' for our LIF data, set to 'cl' for chemiluminescence data, or any other string to override.
+no2field = 'lif'; % Which NO2 data field to use. Leave as empty string or 'lif' for our LIF data, set to 'cl' for chemiluminescence data, or any other string to override.
 conv_fact = 1e-12; % Conversion factor for NO2 data from part-per-whatever to part-per-part. Usually 1e-12, i.e. NO2 data is in pptv.
 aerfield = ''; % Which aerosol extinction field to use.
 ssafield = ''; % Which aerosol SSA field to use.
@@ -82,7 +82,7 @@ numBLpoints = 20; % The number of data points required in the bottom 3 km to ens
 minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to ensure good BL sampling. Hains et. al. recommends 0.5 km (500 m).
 
 % Set to 1 to include ground site data, or 0 to use only aircraft data.
-useground = 0;
+useground = 1;
 
 % These variables are used to subset the aircraft data into profiles used
 % to generate column data to compare against satellite data. 
@@ -105,7 +105,7 @@ useground = 0;
 % range files returned from merge_field_names.  If there is one, that one
 % will be used, otherwise the user is presented with his options.
 profile_input = '';
-profnums = ''; % set to 'fetch' to use the first input to this function as the profile numbers
+profnums = 'fetch'; % set to 'fetch' to use the first input to this function as the profile numbers
 
 
 % Fields for pressure and temperature, set to empty strings to
@@ -117,7 +117,7 @@ tempfield = '';
 cloud_product = 'omi'; % Can be 'omi', 'modis', or 'rad'
 cloud_frac_max = 0.2; % Maximum cloud fraction to allow in a pixel. Recommended 0.2 for OMI, 0 for MODIS, and 0.5 for radiance.
 row_anomaly = 'XTrackFlags'; % How to reject for the row anomaly - can be 'AlwaysByRow', 'RowsByTime', 'XTrackFlags', and 'XTrackFlagsLight'
-behrfield = 'BEHR_R_ColumnAmountNO2Trop'; % The field in the Data structure with NO2 column data. 
+behrfield = 'BEHRColumnAmountNO2Trop'; % The field in the Data structure with NO2 column data. 
                                           % Choices include 'ColumnAmountNO2Trop' (OMI SP column), 'BEHRColumnAmountNO2Trop' (BEHR column) 
                                           % and 'BEHR_R_ColumnAmountNO2Trop' only available in files where the column was reprocessed with
                                           % an AMF derived from in-situ measurements.

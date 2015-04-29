@@ -5,7 +5,7 @@ function [  ] = split_ground_merge(  )
 %   to separate these into individual days' files.
 
 E = JLLErrors;
-DEBUG_LEVEL = 2;
+DEBUG_LEVEL = 1;
 
 [loadfile, loaddir] = uigetfile('*.mat','Choose to file to split');
 [savedir] = uigetdir('/Volumes', 'Select the directory to save the split files to');
@@ -41,9 +41,35 @@ switch userans
             udates{a} = datestr(modis_day_to_date(udoy(a),useryear{1}),29);
         end
     case 'Date'
-        E.callError('not_implemented','This hasn''t been implemented yet (no need)');
-        % will need to both save the dates to the cell array "dates" and
-        % create a day-of-year vector to identify the days
+        user_date_format = inputdlg('You have selected date. Describe the date format, using standard Matlab date format strings.','Date format');
+        dates = M.Merge.Data.(mergefields{dayfield}).Values;
+        if ~isa(dates,'double')
+            % It should be that any date will be read in as a number, e.g.
+            % 20130901. If not, this function will not be able to handle
+            % that.
+            E.badvartype(dates,'double');
+        end
+        % Make dates a column vector, then convert to a cell array - this
+        % prevents num2str from putting spaces in there
+        if ~iscolumn(dates); dates = dates'; end
+        date_chararray = num2str(dates);
+        tmp_datenums = datenum(date_chararray, user_date_format{1});
+        dates = cellstr(datestr(tmp_datenums,29));
+        
+        % Make a doy vector for use in the main function
+        doy = nan(size(dates));
+        for a=1:numel(dates)
+            if DEBUG_LEVEL > 1; 
+                fprintf('\t Converting to doy: %d of %d\n',a,numel(dates));
+            end
+            doy(a) = modis_date_to_day(dates{a});
+        end
+        udoy = unique(doy);
+        udates = cell(size(udoy));
+        for a=1:numel(udoy)
+            udates{a} = datestr(modis_day_to_date(udoy(a),year(dates{1})),29);
+        end
+        
 end
 
 
