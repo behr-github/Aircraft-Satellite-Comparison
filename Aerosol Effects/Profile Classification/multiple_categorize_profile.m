@@ -1,4 +1,4 @@
-function [ OutStruct ] = multiple_categorize_profile( no2_in, no2_alt_in, aer_in, aer_alt_in )
+function [ OutStruct, Diagnostics ] = multiple_categorize_profile( varargin )
 %multiple_categorize_profile Run categorize_aerosol_profile 3 times and take the most common result.
 %   The general idea of categorizing the relative position of NO2 and
 %   aerosol profiles by comparing the altitude below which x% of the column
@@ -6,6 +6,13 @@ function [ OutStruct ] = multiple_categorize_profile( no2_in, no2_alt_in, aer_in
 %   profile at lower altitudes.  By checking the categorization for
 %   multiple critical fractions and taking the most common result from
 %   them, this should overcome that problem.
+%
+%   This requires either 1 or 4 inputs. Either pass a campaign name valid
+%   for merge_field_names as the sole input (as a string) or pass an NO2
+%   profile, its corresponding altitudes, an aerosol extinction profile,
+%   and its corresponding altitudes as the four inputs. The first mode will
+%   categorize all profiles in that campaign; the second will categorize
+%   the given profile.
 %
 %   Josh Laughner <joshlaugh5@gmail.com> 7 Apr 2015
 
@@ -15,7 +22,22 @@ E = JLLErrors;
 %%%%% INPUT %%%%%
 %%%%%%%%%%%%%%%%%
 
-campaign_name = 'discover-ca';
+narginchk(1,4);
+if ischar(varargin{1})
+    campaign_name = varargin{1};
+elseif nargin == 4 && all(iscellcontents(varargin,'isnumeric'))
+    no2_in = varargin{1};
+    no2_alt_in = varargin{2};
+    aer_in = varargin{3};
+    aer_alt_in = varargin{4};
+    if ~all(size(no2_in) == size(no2_alt_in))
+        E.badinput('no2_in and no2_alt_in (first two arguments) must be the same size');
+    elseif ~all(size(aer_in) == size(aer_alt_in))
+        E.badinput('aer_in and aer_alt_in (third and fourth arguments) must be the same size');
+    end
+else
+    E.badinput('multiple_categorize_profile requires either a valid campaign name as a string or 4 inputs: NO2 profile & altitudes, aerosol extinction and altitudes');
+end
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -24,12 +46,13 @@ campaign_name = 'discover-ca';
 
 crit_fracs = [0.5, 0.75, 0.9];
 cat_structs = cell(1,numel(crit_fracs));
+diag_structs = cell(1,numel(crit_fracs));
 for a=1:numel(crit_fracs)
     if nargin < 4
-        cat_structs{a} = categorize_aerosol_profile('campaign_name',campaign_name,'crit_frac',crit_fracs(a),'DEBUG_LEVEL',1);
+        [cat_structs{a}, diag_structs{a}] = categorize_aerosol_profile('campaign_name',campaign_name,'crit_frac',crit_fracs(a),'DEBUG_LEVEL',1);
         out_fxn = @add_cat;
     else
-        cat_structs{a} = categorize_aerosol_profile(no2_in, no2_alt_in, aer_in, aer_alt_in,'crit_frac',crit_fracs(a),'DEBUG_LEVEL',1);
+        [cat_structs{a}, diag_structs{a}] = categorize_aerosol_profile(no2_in, no2_alt_in, aer_in, aer_alt_in,'crit_frac',crit_fracs(a),'DEBUG_LEVEL',1);
         out_fxn = @add_cat_simple;
     end
 end
@@ -81,6 +104,8 @@ OutStruct.NO2AboveHighDates = {};
 % Rules: if two or three categorizations agree on the location
 % (coinc/aer above/no2 above), that categorization is chosen.
 
+diag_reasons = zeros(size(cat_data,1),2);
+
 for a=1:size(cat_data,1)
     cats = cat_data(a,:);
     % Look for the categories - allow there to be a space in between
@@ -96,7 +121,25 @@ for a=1:size(cat_data,1)
     elseif sum(xx_no2) > 1
         OutStruct = out_fxn(OutStruct, cats, xx_no2);
     end
+    
+    diag_reasons(a,1) = cat_data{a,1}; % This is the profile number
+    diag_reasons(a,2) = meta_diag_reason(xx_coinc, xx_aer, xx_no2);
 end
+
+% Make the Diagnostic output structure. It will contain each critical
+% fraction's diagnostics plus the meta-categorization diagnostics.
+Diagnostics = struct;
+for a=1:numel(crit_fracs)
+    fn = sprintf('CritFrac%d',crit_fracs(a)*100);
+    Diagnostics.(fn) = diag_structs{a};
+end
+Diagnostics.MultipleCat.reasons = {'101 - all runs of categorize_aerosol_profile failed to return a categorization';...
+                                   '102 - all but one run of categorize_aerosol_profile failed to return a categorization';...
+                                   '200 - no majority category'};
+
+dd = diag_reasons(:,2) ~= 0;                               
+Diagnostics.MultipleCat.profiles = diag_reasons(dd,:);
+
 
 end
 
@@ -124,6 +167,24 @@ function cat_name = add_cat_simple(~, cat_line, xx)
     cat_name = unique(cats(xx));
     if numel(cat_name) > 1 % both names should be the same. if not, don't continue.
         E.badvartype(cat_name,'1x1 cell array');
+    end
+end
+
+function reason = meta_diag_reason(xx_coinc, xx_aer, xx_no2)
+    % Identify the reason a profile was not meta-categorized. Codes are:
+    %   100 - All but one critical fraction (102), or all critical
+    %   fractions (101) are uncategorized.
+    %   200 - There are two or more categorized fractions, but they all
+    %   disagree
+    sum_all = sum(xx_coinc) + sum(xx_aer) + sum(xx_no2);
+    if sum_all == 0
+        reason = 101;
+    elseif sum_all == 1
+        reason = 102;
+    elseif sum(xx_coinc) < 2 && sum(xx_aer) < 2 && sum(xx_no2) < 2
+        reason = 200;
+    else
+        reason = 0;
     end
 end
 

@@ -1,4 +1,4 @@
-function [ output, expected_classification ] = categorize_aerosol_profile(varargin)
+function [ output, Diagnostic, expected_classification ] = categorize_aerosol_profile(varargin)
 %categorize_aerosol_profile Classify the relation of aerosol profile shape to NO2
 %   Bousserez 2014 (ACPD, in preparation) modeled the effect of coincident
 %   aerosol and NO2 layers on the AMF for satellite retireved NO2 columns.
@@ -157,15 +157,25 @@ if read_merge_bool
     end
 end
 
-% If there are two outputs, the user wants to also include a structure with
+% If there are three outputs, the user wants to also include a structure with
 % what the profile looks like to them. This is useful in conjunction with
 % tabulate_profile_categories to examine how the profile categorization
 % compared with what it looks like visually.
-if nargout > 1;
+if nargout > 2;
     classifications = {'Coincident','SemiCoincident','AerosolAbove','NO2Above','Ambiguous'};
     class_date_fields = strcat(classifications,'Dates');
     expected_classification = make_empty_struct_from_cell([classifications,class_date_fields]);
 end
+
+% Initialize the Diagnostic structure. This will include (currently) the
+% reason a profile is being skipped. 
+Diagnostic.rejection.reasons = {'10 - 0 or 1 non-NaN bins (11 ~ in NO2, 12 ~ in aerosol)';...
+                                '20 - no overlap in profiles';...
+                                '30 - no solution, roots outside expected bin (31 ~ for NO2, 32 ~ for aerosol';...
+                                '40 - both solutions in the same bin (41 ~ for NO2, 42 ~ for aerosol';...
+                                '50 - critical fraction for one profile higher than top of other (51 ~ z_no2 > max(aerosol), 52 vice versa)';...
+                                '60 - top bin > bottom bin (61 ~ NO2, 62 ~ aerosol)'};
+Diagnostic.rejection.profiles = [];
 
 %%%%%%%%%%%%%%%%%%%%%
 %%%%% MAIN LOOP %%%%%
@@ -281,12 +291,19 @@ for d=1:nd
         % analysis
         if allbutone(isnan(no2_bins)) || allbutone(isnan(aer_bins));
             if DEBUG_LEVEL > 1; fprintf('\tNO2 or aerosol bins for profile #%d on %s have 0 or 1 non-NaN bins\n',profile_id(p,1),datestr(dates(d))); end
+            
+            if allbutone(isnan(no2_bins))
+                Diagnostic = add_rejection(Diagnostic,profile_id(p,1),11);
+            else
+                Diagnostic = add_rejection(Diagnostic,profile_id(p,1),12);
+            end
+            
             continue 
         end
         
         % Otherwise, trim the leading and trailing NaNs and linearly
         % interpolate any middle NaNs
-        if DEBUG_LEVEL > 3 || nargout > 1 
+        if DEBUG_LEVEL > 3 || nargout > 2 
             fig=figure; 
             [hax,h1,h2] = plotxx(no2_bins,no2_bin_alt,aer_bins,aer_bin_alt,{'NO2','Aerosol'},{'Alt/NO2','Alt/Aerosol'});
             set(h1,'Linewidth',5);
@@ -300,9 +317,12 @@ for d=1:nd
         [aer_bin_alt, aer_bins] = fill_nans(aer_bin_alt, aer_bins);
         if sum(ismember(no2_bin_alt,aer_bin_alt))<2
             if DEBUG_LEVEL > 1; fprintf('\tNO2 and aerosol profiles for profile #%d on %s have negligible overlap\n',profile_id(p,1),datestr(dates(d))); end
+            
+            Diagnostic = add_rejection(Diagnostic, profile_id(p,1), 20);
+            
             continue
         end
-        if DEBUG_LEVEL > 3 || nargout > 1
+        if DEBUG_LEVEL > 3 || nargout > 2
             line(no2_bins,no2_bin_alt,'parent',hax(1),'color','b','linewidth',2);
             line(aer_bins,aer_bin_alt,'parent',hax(2),'color',[0 0.5 0],'linewidth',2);
         end
@@ -371,9 +391,11 @@ for d=1:nd
             elseif all(~xx)
                 warning('No solution to NO2 profile. Profile will not be categorized.');
                 add2output = false;
+                Diagnostic = add_rejection(Diagnostic, profile_id(p,1), 31);
             elseif all(xx);
                 warning('Both solutions for NO2 profile #%d (%0.2f, %0.2f) fall in expected range. Profile will not be categorized.',profile_id(p,1),z90_no2,z90_no2_neg);
                 add2output = false;
+                Diagnostic = add_rejection(Diagnostic, profile_id(p,1), 41);
             else
                 z90_no2 = test(xx);
             end
@@ -399,9 +421,11 @@ for d=1:nd
             elseif all(~xx)
                 warning('No solution to aerosol profile. Profile will not be categorized.');
                 add2output = false;
+                Diagnostic = add_rejection(Diagnostic, profile_id(p,1), 32);
             elseif all(xx) > 0;
                 warning('Both solutions for aerosol profile #%d (%0.2f, %0.2f) fall in expected range. Profile will not be categorized.',profile_id(p,1),z90_aer,z90_aer_neg);
                 add2output = false;
+                Diagnostic = add_rejection(Diagnostic, profile_id(p,1), 42);
             else
                 z90_aer = test(xx);
             end
@@ -414,6 +438,12 @@ for d=1:nd
         if add2output && (z90_no2 > max(aer_bin_alt) || z90_aer > max(no2_bin_alt))
             if DEBUG_LEVEL > 1; fprintf('The critical altitude for one profile is greater than the top of the other profile (#%d on %s), skipping\n',profile_id(p,1),datestr(dates(d))); end
             add2output = false;
+            
+            if z90_no2 > max(aer_bin_alt)
+                Diagnostic = add_rejection(Diagnostic, profile_id(p,1), 51);
+            else
+                Diagnostic = add_rejection(Diagnostic, profile_id(p,1), 52);
+            end
         end
         
         % Also check that the top bin of either profile is greater than its
@@ -424,6 +454,12 @@ for d=1:nd
         if no2_bins(end) > no2_bins(1) || aer_bins(end) > aer_bins(1)
             if DEBUG_LEVEL > 1; fprintf('One profile top has greater concentration/extinction that its bottom (#%d on %s), skipping\n',profile_id(p,1),datestr(dates(d))); end
             add2output = false;
+            
+            if no2_bins(end) > no2_bins(1)
+                Diagnostic = add_rejection(Diagnostic, profile_id(p,1), 61);
+            else
+                Diagnostic = add_rejection(Diagnostic, profile_id(p,1), 62);
+            end
         end
         
         % This boolean will be true only if both the NO2 and aerosol
@@ -507,9 +543,9 @@ for d=1:nd
             end
         end
         
-        if DEBUG_LEVEL > 3 || nargout > 1
+        if DEBUG_LEVEL > 3 || nargout > 2
             title(sprintf('%d: %s',profile_id(p,:),profile_type));
-            if nargout > 1
+            if nargout > 2
                 title(sprintf('%d',profile_id(p,:))); % Don't show the profile type if we're manually classifying - we don't want to bias our intuition.
                 while true
                     user_classification = input('Enter what this profile looks like:\n  1-Coincident\n  2-Semi coincident\n  3-Aerosol Above\n  4-NO2 Above\n  5-Ambiguous\n ?: ');
@@ -549,12 +585,16 @@ else
     end
 end
 
-if nargout > 1
+if nargout > 2
     for f=1:numel(class_date_fields)
         expected_classification.(class_date_fields{f}) = cellstr(datestr(expected_classification.(class_date_fields{f})));
     end
 end
 
 
+end
+
+function Diagnostic = add_rejection(Diagnostic, profile_id, reason)
+    Diagnostic.rejection.profiles = cat(1, Diagnostic.rejection.profiles, [profile_id, reason]);
 end
 
