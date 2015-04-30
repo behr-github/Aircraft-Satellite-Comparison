@@ -1059,6 +1059,10 @@ else
                 % Integrate, converting the aerosol extinction from Mm^-1
                 % to m^-1 and the bin altitudes from km to m.
                 aer_int = trapz(aerbinmid*1e3, aerintbins*1e-6);
+                % Correct this AOD for the measurement wavelength (532 nm,
+                % adjust to 440 nm for NO measurement) using mean angstrom
+                % exponents for this profile
+                aer_int = adjust_aod_angstrom_exponent(aer_int, Merge, campaign_name, profnum_array{p});
             end
             
             % Check the quality of SSA data. If it is all nans, set the
@@ -1287,4 +1291,46 @@ function [no2bins, no2stderr, q_flag] = add_ground_no2(no2bins, no2stderr, q_fla
         end
         % If there are no files, continue on with the median NO2
     end
+end
+
+function aod = adjust_aod_angstrom_exponent(aod, Merge, campaign_name, profnum)
+% Check input
+E = JLLErrors;
+if ~isscalar(aod) || ~isnumeric(aod)
+    E.badinput('"aod" must be a scalar number')
+elseif ~isstruct(Merge) || any(~ismember({'Data','metadata'},fieldnames(Merge)))
+    E.badinput('"Merge" must be a merge structrue (needs fields Data and metadata)')
+elseif ~ischar(campaign_name)
+    E.badinput('"campaign_name" must be a string')
+elseif ~isscalar(profnum) || ~isnumeric(profnum)
+    E.badinput('"profnum" must be a scalar number')
+end
+
+% Get the angstrom exponents for the indicated profile. We'll also use the
+% SSA to weight the scattering and absorption exponents
+Names = merge_field_names(campaign_name);
+pns = remove_merge_fills(Merge, Names.profile_numbers);
+ae_scat = remove_merge_fills(Merge, Names.scat_angstr_exp);
+ae_abs = remove_merge_fills(Merge, Names.abs_angstr_exp);
+ssa = remove_merge_fills(Merge, Names.aerosol_ssa);
+
+xx = pns == profnum;
+if sum(xx) == 0
+    E.callError('bad_profnum','Could not find any data for profile %d',profnum);
+end
+
+mean_ae_scat = nanmean(ae_scat(xx));
+mean_ae_abs = nanmean(ae_abs(xx));
+mean_ssa = nanmean(ssa(xx));
+
+angstrom_exponent = mean_ae_scat * mean_ssa + mean_ae_abs * (1 - mean_ssa);
+
+% The correction is given as:
+%   (tau_lambda / tau_0) = (lambda / lambda_0)^-alpha
+% where alpha is the angstrom exponent. Note that angstrom exponents seem
+% to be more often used as a description of particle size and other
+% characteristics rather than a wavelength correction.
+
+aod = aod * (440 / 532)^(-angstrom_exponent);
+
 end

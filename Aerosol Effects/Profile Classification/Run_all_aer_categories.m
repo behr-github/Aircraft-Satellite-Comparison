@@ -15,7 +15,7 @@ fprintf('%s\n%s\n%s\n%s\n',accent,msg,msg2,accent);
 pause(4);
 
 % Make this equal to your structure with the category information.
-CatStruct = SEAC4RS_AerCat;
+CatStruct = CO_AerCat;
 
 % The six categories to run
 aer_cats = {'CoincidentLow','CoincidentHigh','AerosolAboveLow','AerosolAboveHigh','NO2AboveLow','NO2AboveHigh'};
