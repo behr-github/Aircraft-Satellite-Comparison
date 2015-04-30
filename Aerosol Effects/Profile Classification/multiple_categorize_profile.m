@@ -120,10 +120,12 @@ for a=1:size(cat_data,1)
         OutStruct = out_fxn(OutStruct, cats, xx_aer);
     elseif sum(xx_no2) > 1
         OutStruct = out_fxn(OutStruct, cats, xx_no2);
+    else
+        diag_reasons(a,1) = cat_data{a,1}; % This is the profile number
+        diag_reasons(a,2) = meta_diag_reason(xx_coinc, xx_aer, xx_no2);
     end
     
-    diag_reasons(a,1) = cat_data{a,1}; % This is the profile number
-    diag_reasons(a,2) = meta_diag_reason(xx_coinc, xx_aer, xx_no2);
+    
 end
 
 % Make the Diagnostic output structure. It will contain each critical
@@ -133,9 +135,12 @@ for a=1:numel(crit_fracs)
     fn = sprintf('CritFrac%d',crit_fracs(a)*100);
     Diagnostics.(fn) = diag_structs{a};
 end
+Diagnostics.IndividualTables.categories = cat_tab;
+Diagnostics.IndividualTables.criteria = crit_tab;
 Diagnostics.MultipleCat.reasons = {'101 - all runs of categorize_aerosol_profile failed to return a categorization';...
                                    '102 - all but one run of categorize_aerosol_profile failed to return a categorization';...
-                                   '200 - no majority category'};
+                                   '200 - no majority category';...
+                                   '999 - other'};
 
 dd = diag_reasons(:,2) ~= 0;                               
 Diagnostics.MultipleCat.profiles = diag_reasons(dd,:);
@@ -184,7 +189,7 @@ function reason = meta_diag_reason(xx_coinc, xx_aer, xx_no2)
     elseif sum(xx_coinc) < 2 && sum(xx_aer) < 2 && sum(xx_no2) < 2
         reason = 200;
     else
-        reason = 0;
+        reason = 999;
     end
 end
 
