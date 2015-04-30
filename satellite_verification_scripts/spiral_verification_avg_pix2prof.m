@@ -1325,6 +1325,14 @@ mean_ssa = nanmean(ssa(xx));
 
 angstrom_exponent = mean_ae_scat * mean_ssa + mean_ae_abs * (1 - mean_ssa);
 
+global nancnt
+if isempty(nancnt); nancnt = 0; end
+
+if isnan(angstrom_exponent);
+    fprintf('\n AE for profile %d is a NaN\n\n',profnum);
+    nancnt = nancnt + 1;
+end
+
 % The correction is given as:
 %   (tau_lambda / tau_0) = (lambda / lambda_0)^-alpha
 % where alpha is the angstrom exponent. Note that angstrom exponents seem
