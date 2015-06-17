@@ -21,12 +21,20 @@ data_fields = {};
 % Use a UTC ranges file? Otherwise will just look for enhanced CO.
 use_utc_ranges = false;
 
-% If not using range files, this will be how many minutes separate fire
-% blocks can be apart and be considered 1 plume. E.g. if n_sep is 1, and
-% minutes 1-4, 6-7, and 11-15 are considered fire plumes, then 1-4 will be
-% joined with 6-7 (and all data from minute 1-7 will be used) but 11-15
-% will be a separate plume
-n_sep = 0;
+% The averaging period for enhancement data. Higher values will
+% probably lead to more contiguous plumes, but can miss shorter ones.
+% Alvarado 2010 (ACP p. 9739) used 60 s average CO data. Note that
+% unaveraged data is used for the correlation test.
+n_sec_avg = 15;
+
+% If not using range files, this will be how many averaging periods
+% separate fire blocks can be apart and be considered 1 plume. E.g. if
+% n_sep is 1, and periods 1-4, 6-7, and 11-15 are considered fire plumes,
+% then 1-4 will be joined with 6-7 (and all data from minute 1-7 will be
+% used) but 11-15 will be a separate plume.
+n_sep = 1;
+
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% MAIN FUNCTION %%%%%
@@ -95,19 +103,18 @@ for a=1:nF
     utc = remove_merge_fills(Merge, 'UTC');
     
     co_enhancement = calculate_enhancement(Merge, 'co', campaign_name);
-    [acn_enhancement, ~, acn_bck_stddev] = calculate_enhancement(Merge, 'acn', campaign_name);
-    [hcn_enhancement, ~, hcn_bck_stddev] = calculate_enhancement(Merge, 'hcn', campaign_name);
+    [acn_enhancement, acn_bck_stddev] = calculate_enhancement(Merge, 'acn', campaign_name);
+    [hcn_enhancement, hcn_bck_stddev] = calculate_enhancement(Merge, 'hcn', campaign_name);
     
     
     % Calculate enhancement values - these will be used to determine the
     % presence of fires.
-    co_enh_min_avg = avg_n_elements(co_enhancement,60,'op','nanmean'); %The initial CO, ACN, and HCN data is second data
-    acn_enh_min_avg = avg_n_elements(acn_enhancement,60,'op','nanmean'); 
-    hcn_enh_min_avg = avg_n_elements(hcn_enhancement,60,'op','nanmean'); 
-    acn_sd_min_avg = avg_n_elements(acn_bck_stddev,60,'op','nanmean');
-    hcn_sd_min_avg = avg_n_elements(hcn_bck_stddev,60,'op','nanmean');
-    utc_min_start_time = utc(1:60:end);
-    utc_min_end_time = utc(60:60:end);
+    co_enh_min_avg = avg_n_elements(co_enhancement,n_sec_avg,'op','nanmean'); %The initial CO, ACN, and HCN data is second data
+    acn_enh_min_avg = avg_n_elements(acn_enhancement,n_sec_avg,'op','nanmean'); 
+    hcn_enh_min_avg = avg_n_elements(hcn_enhancement,n_sec_avg,'op','nanmean'); 
+
+    utc_min_start_time = utc(1:n_sec_avg:end);
+    utc_min_end_time = utc(n_sec_avg:n_sec_avg:end);
     % Cut down the start and end time vectors to be the same length as the
     % CO enhancement vector
     l = length(co_enh_min_avg);
@@ -120,8 +127,14 @@ for a=1:nF
     end
     
     if isempty(regexp(Merge.Data.(Names.co).Unit,'ppb','ONCE'))
-        % Check that the units of CO are in ppb.
+        % Check that the units of CO are in ppb or ppbv
         E.callError('badunit','Expecting CO data to be in ppb - cannot confirm');
+    elseif isempty(regexp(Merge.Data.(Names.acn).Unit,'ppt','ONCE'))
+        % Check that the units of ACN are in ppt or pptv
+        E.callError('badunit','Expecting ACN data to be in ppt - cannot confirm');
+    elseif isempty(regexp(Merge.Data.(Names.hcn).Unit,'ppt','ONCE'))
+        % Check that the units of HCN are in ppt or pptv
+        E.callError('badunit','Expecting HCN data to be in ppt - cannot confirm');
     end
    
     
@@ -145,9 +158,9 @@ for a=1:nF
         co_enh_bool = double(co_enh_min_avg > 20); % This criterion of 20 ppb above background comes from Alvarado (2010)
         % Since Alvarado didn't have a specific number they looked for for
         % ACN/HCN enhancement (just that it was correlated with CO
-        % enhancement) I'll use 3*std. dev. of the background as the
-        % minimum enhancement required.
-        acn_hcn_enh_bool = 2*double(acn_enh_min_avg > 3*acn_sd_min_avg | hcn_enh_min_avg > 3*hcn_sd_min_avg);
+        % enhancement), let's take (for now) 20 ppt - consistent with the
+        % units used, at least.
+        acn_hcn_enh_bool = 2*double(acn_enh_min_avg > 20 | hcn_enh_min_avg > 20);
         
         % This will ID separately areas with no enhancement, CO only,
         % ACN/HCN only, and CO and ACN/HCN. This should help deal with
@@ -169,7 +182,7 @@ for a=1:nF
             % enhancement.
             if blocks(b,3) > 0
                 block_start_utc = utc_min_start_time(blocks(b,1));
-                block_end_utc = utc_min_start_time(blocks(b,1));
+                block_end_utc = utc_min_end_time(blocks(b,2));
                 blocks(b,3) = is_block_fire(block_start_utc, block_end_utc);
             end
         end
@@ -203,8 +216,13 @@ for a=1:nF
                 end
             end
         end
-        is_fire = blocks(:,3);
-        fire_ranges = blocks(is_fire,1:2);   
+        is_fire = logical(blocks(:,3));
+        fire_ranges = blocks(is_fire,1:2);
+        % Convert back to UTC values
+        for b=1:size(fire_ranges,1)
+            fire_ranges(b,1) = utc_min_start_time(fire_ranges(b,1));
+            fire_ranges(b,2) = utc_min_end_time(fire_ranges(b,2));
+        end
     end
     
     merge_date = regexprep(Merge.metadata.date,'\D','');
@@ -247,30 +265,12 @@ end
 %%%%% SUBFUNCTIONS %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-function [enhancement, bin_num, bckgnd_stddev] = calculate_enhancement(Merge, species_name, campaign_name)
+function [enhancement, bckgnd_stddev] = calculate_enhancement(Merge, species_name, campaign_name)
     Names = merge_field_names(campaign_name);
-    [species_bckgnd, stddev, ~, bin_edges] = calc_day_background(Merge, species_name, campaign_name);
+    [species_bckgnd, bckgnd_stddev] = calc_day_background(Merge, species_name, campaign_name);
     
-    % Add an extra bin to the background for data points that don't have a
-    % bin, it will cause the enhancement to be a NaN for that data point.
-    % Do the same for the std dev. 
-    species_bckgnd(end+1) = nan;
-    stddev(end+1) = nan;
-    nanbin = length(species_bckgnd);
-    
-    species = remove_merge_fills(Merge, Names.(species_name));
-    pres = remove_merge_fills(Merge, Names.pressure);
-    bin_num = nan(size(species));
-    for a=1:numel(species)
-        bin = find(pres(a) <= bin_edges(:,1) & pres(a) > bin_edges(:,2));
-        if isempty(bin)
-            bin = nanbin;
-        end
-        bin_num(a) = bin;
-    end
-    
-    enhancement = species - (species_bckgnd(bin_num))';
-    bckgnd_stddev = (stddev(bin_num))';
+    species = remove_merge_fills(Merge, Names.(species_name));   
+    enhancement = species - species_bckgnd;
 end
 
 function Fires = add_fire_data(Merge, Fires, field_name, fieldname_date)
