@@ -1,4 +1,4 @@
-function [ wrf_profile ] = interp_wrf_prof( PROFILE, lat, lon)
+function [ wrf_profile, wrf_pressures ] = interp_wrf_prof( PROFILE, lat, lon)
 %interp_wrf_prof Given a WRF profile structure and a lat/lon, will
 %interpolate the profile to those coordinate.
 
@@ -14,6 +14,9 @@ wrf_no2 = flipdim(PROFILE.NO2_profile,1);
 wrf_profile = interp3(Y,Z,X,wrf_no2,lat,wrf_pressures,lon);
 wrf_profile = flipud(wrf_profile);
 
+% Flip the pressure around again (and make them a column) to match the
+% flipped profile for output
+wrf_pressures = flipud(wrf_pressures');
 
 end
 

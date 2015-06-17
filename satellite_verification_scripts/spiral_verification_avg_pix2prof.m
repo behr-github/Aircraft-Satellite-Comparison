@@ -526,7 +526,9 @@ else
         end
         
         unique_profnums = unique_profnums(yy); 
-        start_times = start_times(yy); end_times = end_times(yy);
+        start_times = start_times(yy); 
+        end_times = end_times(yy);
+        prof_tzs = prof_tzs(yy);
         
         % If the user passed a list of profile numbers, remove any profile
         % numbers that do not match the list provided.
@@ -536,6 +538,9 @@ else
                 tmp(a) = any(unique_profnums(a)==user_profnums);
             end
             unique_profnums(~tmp) = [];
+            prof_tzs(~tmp) = [];
+            start_times(~tmp) = [];
+            end_times(~tmp) = [];
         end
         
         % Save each profile's NO2, altitude, radar altitude, latitude, and
@@ -741,8 +746,13 @@ else
         % Skip pixels with corners if the corners have differing signs and
         % are not near 0; this will confuse the algorithm that matches
         % spirals to pixels.  Check along the first dimension of the corner
-        % variables.
-        pix_xx = pix_xx & ~((any(abs(loncorn_p)>20) & abs(mean(sign(loncorn_p),1))~=1)');
+        % variables. First check that pix_xx isn't an empty matrix, which will happen
+        % if latlon_logical is all 0's - because of how the loncorn is indexed, the
+        % same latlon_logical will make omi_no2_p an empty matrix, and loncorn_p an
+        % empty 4 x 0 matrix, which will confuse the & operation
+        if ~isempty(pix_xx)
+            pix_xx = pix_xx & ~((any(abs(loncorn_p)>20) & abs(mean(sign(loncorn_p),1))~=1)');
+        end
         
         % Check the vza
         vza_xx = vza_p <= 60;
