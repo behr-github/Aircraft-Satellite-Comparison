@@ -3,7 +3,7 @@ function [ varargout ] = find_campaign_fires( Merge )
 %   Detailed explanation goes here
 
 E = JLLErrors;
-DEBUG_LEVEL = 1;
+DEBUG_LEVEL = 2;
 
 %%%%%%%%%%%%%%%%%%%%%%
 %%%%% USER INPUT %%%%%
@@ -15,17 +15,17 @@ campaign_name = 'seac4rs';
 % Data fields of interest to be collected from each fire plume. These
 % should correspond to valid fields in the Names structure returned from
 % merge_field_names, e.g. 'no2_lif', 'co', 'aerosol_extinction'
-%data_fields = {'no2_lif', 'aerosol_extinction', 'pressure', 'longitude', 'latitude'};
-data_fields = {};
+data_fields = {'no2_lif', 'aerosol_extinction', 'co', 'acn', 'hcn', 'pressure', 'longitude', 'latitude'};
+
 
 % Use a UTC ranges file? Otherwise will just look for enhanced CO.
-use_utc_ranges = false;
+use_utc_ranges = true;
 
 % The averaging period for enhancement data. Higher values will
 % probably lead to more contiguous plumes, but can miss shorter ones.
 % Alvarado 2010 (ACP p. 9739) used 60 s average CO data. Note that
 % unaveraged data is used for the correlation test.
-n_sec_avg = 15;
+n_sec_avg = 60;
 
 % If not using range files, this will be how many averaging periods
 % separate fire blocks can be apart and be considered 1 plume. E.g. if
@@ -34,6 +34,9 @@ n_sec_avg = 15;
 % used) but 11-15 will be a separate plume.
 n_sep = 1;
 
+% How good the correlation between CO and ACN/HCN enhancement has to be to
+% be considered a fire plume (measured by R^2 value)
+r2_min = 0.3;
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
@@ -49,10 +52,10 @@ if any(~data_chk)
     bad_fields = strjoin(data_fields(~data_chk),', ');
     E.badinput('The fields %s are not defined in the Names structure',bad_fields);
 else
-    data_chk = false(size(data_fields));
+    data_chk = true(size(data_fields));
     for a=1:numel(data_fields)
         if isempty(Names.(data_fields{a}))
-            data_chk(a) = true;
+            data_chk(a) = false;
         end
     end
     if any(~data_chk)
@@ -96,15 +99,17 @@ for a=1:nF
     if all(Merge.Data.(Names.co).Values < 0) || all(Merge.Data.(Names.acn).Values < 0) || all(Merge.Data.(Names.hcn).Values < 0)
         if DEBUG_LEVEL > 0; fprintf('Skipping %s - too much missing data\n',Merge.metadata.date); end
         continue
+    else
+        if DEBUG_LEVEL > 0; fprintf('Now finding fires on %s\n',Merge.metadata.date); end
     end
     
     merge_dates{a} = Merge.metadata.date;
     
     utc = remove_merge_fills(Merge, 'UTC');
     
-    co_enhancement = calculate_enhancement(Merge, 'co', campaign_name);
-    [acn_enhancement, acn_bck_stddev] = calculate_enhancement(Merge, 'acn', campaign_name);
-    [hcn_enhancement, hcn_bck_stddev] = calculate_enhancement(Merge, 'hcn', campaign_name);
+    co_enhancement = calculate_enhancement(Merge, 'co', campaign_name, 'ppb');
+    [acn_enhancement, acn_bck_stddev] = calculate_enhancement(Merge, 'acn', campaign_name, 'ppt');
+    [hcn_enhancement, hcn_bck_stddev] = calculate_enhancement(Merge, 'hcn', campaign_name, 'ppt');
     
     
     % Calculate enhancement values - these will be used to determine the
@@ -125,20 +130,10 @@ for a=1:nF
     if length(co_enh_min_avg) ~= length(utc_min_start_time) || length(co_enh_min_avg) ~= length(utc_min_end_time) || length(co_enh_min_avg) ~= length(acn_enh_min_avg) || length(co_enh_min_avg) ~= length(hcn_enh_min_avg)
         E.badvar('co_enh_min_avg, acn_enh_min_avg, hcn_enh_min_avg, utc_min_start_time, utc_min_end_time','These are not all the same length')
     end
-    
-    if isempty(regexp(Merge.Data.(Names.co).Unit,'ppb','ONCE'))
-        % Check that the units of CO are in ppb or ppbv
-        E.callError('badunit','Expecting CO data to be in ppb - cannot confirm');
-    elseif isempty(regexp(Merge.Data.(Names.acn).Unit,'ppt','ONCE'))
-        % Check that the units of ACN are in ppt or pptv
-        E.callError('badunit','Expecting ACN data to be in ppt - cannot confirm');
-    elseif isempty(regexp(Merge.Data.(Names.hcn).Unit,'ppt','ONCE'))
-        % Check that the units of HCN are in ppt or pptv
-        E.callError('badunit','Expecting HCN data to be in ppt - cannot confirm');
-    end
    
     
     if use_utc_ranges
+        if DEBUG_LEVEL > 1; fprintf('\tIdentifying UTC ranges containing fire data\n'); end
         rr = range_dates == datenum(Merge.metadata.date);
         if sum(rr) == 0
             E.callError('date_invalid','Could not find UTC range data for %s', Merge.metadata.date);
@@ -155,6 +150,7 @@ for a=1:nF
         
         fire_ranges = Ranges(rr).Ranges(is_fire,1:2);
     else
+        if DEBUG_LEVEL > 1; fprintf('\tIdentifying fires by CO enhancement\n'); end
         co_enh_bool = double(co_enh_min_avg > 20); % This criterion of 20 ppb above background comes from Alvarado (2010)
         % Since Alvarado didn't have a specific number they looked for for
         % ACN/HCN enhancement (just that it was correlated with CO
@@ -233,6 +229,17 @@ for a=1:nF
     end
 end
 
+% Record the run parameters
+Fires.run_params.campaign = campaign_name;
+Fires.run_params.use_utc_ranges = use_utc_ranges;
+Fires.run_params.r2_min = r2_min;
+if use_utc_ranges
+    Fires.run_params.range_file = range_file;
+else   
+    Fires.run_params.n_sec_avg = n_sec_avg;
+    Fires.run_params.n_sep = n_sep;
+end
+
 if nargout > 0
     varargout{1} = Fires;
 else
@@ -249,14 +256,30 @@ end
         block_acn = acn_enhancement(utc_xx);
         block_hcn = hcn_enhancement(utc_xx);
         
+        % Disable warnings temporarily to prevent a flood of warnings about
+        % NaNs in the data.
+        W = warning; warning('off','all');
         [~,~,~,FitData] = calc_fit_line(block_co, block_acn, 'regression', 'rma');
         r2_acn = FitData.R2;
         [~,~,~,FitData] = calc_fit_line(block_co, block_hcn, 'regression', 'rma');
         r2_hcn = FitData.R2;
+        warning(W);
         
         % If neither ACN or HCN are correlated with the CO enhancement,
         % this is not a fire plume (Alvarado 2010)
-        fire_bool = r2_acn > 0.3 || r2_hcn > 0.3;
+        fire_bool = r2_acn > r2_min || r2_hcn > r2_min;
+    end
+
+    function Fires = add_fire_data(Merge, Fires, field_name, fieldname_date)
+        data = remove_merge_fills(Merge, Names.(field_name));
+        utc_ranges = Fires.(fieldname_date).utc_ranges;
+        s = size(utc_ranges,1);
+        Fires.(fieldname_date).(field_name) = cell(s,1);
+        
+        for r=1:s
+            xx = utc >= utc_ranges(r,1) & utc < utc_ranges(r,2);
+            Fires.(fieldname_date).(field_name){r} = data(xx);
+        end
     end
 
 end
@@ -265,23 +288,18 @@ end
 %%%%% SUBFUNCTIONS %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-function [enhancement, bckgnd_stddev] = calculate_enhancement(Merge, species_name, campaign_name)
+function [enhancement, bckgnd_stddev] = calculate_enhancement(Merge, species_name, campaign_name, units_out)
+% Calculate the enhancement for the give species based on a background
+% derived for the whole day. Forces the enhancement to be in the desired
+% units.
     Names = merge_field_names(campaign_name);
+    enh_units = Merge.Data.(Names.(species_name)).Unit;
     [species_bckgnd, bckgnd_stddev] = calc_day_background(Merge, species_name, campaign_name);
     
     species = remove_merge_fills(Merge, Names.(species_name));   
     enhancement = species - species_bckgnd;
+    enhancement = convert_units(enhancement, enh_units, units_out);
 end
 
-function Fires = add_fire_data(Merge, Fires, field_name, fieldname_date)
-[data, utc] = remove_merge_fills(Merge, field_name);
-utc_ranges = Fires.(fieldname_date).utc_ranges;
-s = size(utc_ranges,1);
-Fires.(fieldname_date).(field_name) = cell(s,1);
 
-for r=1:s
-    xx = utc >= utc_ranges(r,1) & utc < utc_ranges(r,2);
-    Fires.(fieldname_date).(field_name){r} = data(xx);
-end
-end
 
