@@ -100,7 +100,7 @@ end
 
 %crit_frac is the fraction of the integrated column that we look for to
 %compare heights
-if isempty(crit_frac); crit_frac = 0.75; end
+if isempty(crit_frac); crit_frac = 0.9; end
 %mag_crit is the criterion to separate aerosol profiles based on the
 %magnitude of the profile.  Set mag_crit_type to 'max' to use the maximum
 %extinction in Mm^(-1) or 'int' to use the integrated extinction, i.e.
@@ -254,7 +254,8 @@ for d=1:nd
             
             xx = find(strcmp(datestr(dates(d),29),range_dates));
             if isempty(xx);
-                error('run_spiral:ranges','No UTC ranges found for %s',curr_date);
+                if DEBUG_LEVEL > 0; fprintf('No UTC ranges found for %s. Skipping\n',datestr(dates(d))); end
+                continue
             end
             profile_id = Ranges(xx).Ranges;
         end
@@ -308,6 +309,10 @@ for d=1:nd
             [hax,h1,h2] = plotxx(no2_bins,no2_bin_alt,aer_bins,aer_bin_alt,{'NO2','Aerosol'},{'Alt/NO2','Alt/Aerosol'});
             set(h1,'Linewidth',5);
             set(h2,'Linewidth',5);
+            set(h1,'Marker','x');
+            set(h2,'Marker','^');
+            set(h1,'Markersize',12);
+            set(h2,'Markersize',12);
             ylim1 = hax(1).YLim; ylim2 = hax(2).YLim;
             newylim = [0, max(ylim1(2),ylim2(2))];
             set(hax(1),'ylim',newylim);

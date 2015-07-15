@@ -182,12 +182,20 @@ end
 file_pat = strcat(upper(regexprep(campaign_name,'\W','_')),'*%s_%s_%s.mat');
 F = wildcard_load(mdir,file_pat,sel_date,'Merge');
 
-profnums = remove_merge_fills(F.Merge,Names.profile_numbers);
+if numel(sel_profnum) == 1
+    profnums = remove_merge_fills(F.Merge,Names.profile_numbers);
+else
+    utc = remove_merge_fills(F.Merge, 'UTC');
+end
 no2 = remove_merge_fills(F.Merge,Names.no2_lif);
 aer = remove_merge_fills(F.Merge,Names.aerosol_extinction);
 alt = remove_merge_fills(F.Merge,Names.gps_alt);
 
-xx = profnums == sel_profnum;
+if numel(sel_profnum) == 1
+    xx = profnums == sel_profnum;
+else
+    xx = utc >= sel_profnum(1) & utc < sel_profnum(2);
+end
 prof_no2 = no2(xx);
 prof_no2_alt = alt(xx);
 prof_aer = aer(xx);

@@ -282,7 +282,9 @@ end
 % fields we need are set and if not, error out.
 
 if ~isempty(campaign_name);
-    [FieldNames,~,~,~,ground_site_dir] = merge_field_names(campaign_name);
+    % get the information needed to read the merge files but do not ask
+    % the user to choose a range file.
+    [FieldNames,~,~,~,ground_site_dir] = merge_field_names(campaign_name, false);
 elseif isempty(no2field) || isempty(altfield) || isempty(aerfield) || isempty(ssafield) || isempty(radarfield) || isempty(presfield) || isempty(Tfield)
     error(E.badinput('If no campaign is to be specified (using the parameter ''campaign_name'') then parameters no2field, altfield, presfield, tempfield, radarfield, aerfield, and ssafield must not be empty strings.'));
 end
@@ -572,7 +574,7 @@ else
         % to allow
         yy = false(size(Ranges,1),1);
         for a=1:size(Ranges,1)
-            if ~isempty(user_profnums) && ~(containedin(Ranges(a,1),user_profnums(:,1)) && containedin(Ranges(a,2),user_profnums(:,2)))
+            if ~isempty(user_profnums) && ~(ismember(Ranges(a,1),user_profnums(:,1)) && ismember(Ranges(a,2),user_profnums(:,2)))
                 % If the UTC range is not one defined in the user_profnums
                 % (which is really user_ranges in this case, but it was
                 % called profnums first), skip the rest of this loop, which
@@ -611,6 +613,17 @@ else
             if aerfield ~= 0; aer_array{a} = aer_data(xx); end
             if ssafield ~= 0; ssa_array{a} = ssa_data(xx); end
             profnum_array{a} = ranges_in_time(a,:);
+        end
+        
+        % prof_tzs is used later to add ground site data for DISCOVER
+        % campaigns. If we are using a UTC range file, we are more than
+        % likely in a campaign that doesn't have ground site data. So,
+        % check that we are not using ground data (error if we are) and
+        % make a dummy prof_tz cell array.
+        if ~useground
+            prof_tzs = cell(size(profnum_array));
+        else
+            E.notimplemented('%s','Trying to use ground site data and a UTC range is not supported, since only DISCOVER campaigns have ground site data. Set the ''useground'' parameter to 0')
         end
     end
     
@@ -1025,7 +1038,7 @@ else
         % Double check that this number is a scalar. This will catch if a
         % matrix (rather than a vector) slips into this calculation.
         if ~isscalar(column_error)
-            error(E.callError('''column_error'' is not a scalar value but it should be'));
+            error(E.badvartype('column_error', 'scalar'));
         end
         
         
@@ -1069,6 +1082,13 @@ else
                 % Integrate, converting the aerosol extinction from Mm^-1
                 % to m^-1 and the bin altitudes from km to m.
                 aer_int = trapz(aerbinmid*1e3, aerintbins*1e-6);
+                % Calculate the height of the aerosol profile as the
+                % difference between the first and last non-NaN bin. This
+                % will give us a criterion to gauge the comparability of
+                % the AOD.
+                aer_bottom = find(~isnan(aerintbins),1,'first');
+                aer_top = find(~isnan(aerintbins),1,'last');
+                aer_prof_height = aerbinmid(aer_top) - aerbinmid(aer_bottom);
             end
             
             % Check the quality of SSA data. If it is all nans, set the
@@ -1109,7 +1129,8 @@ else
             db.aer_max_out{p} = aer_max; 
             db.aer_int_out{p} = aer_int;
             db.aer_quality{p} = aer_quality;
-            db.aer_median_ssa{p} = aer_ssa;
+            db.aer_median_ssa{p} = aer_ssa; 
+            db.aer_prof_height{p} = aer_prof_height;
         end
         db.column_error{p} = column_error;
         
@@ -1202,6 +1223,7 @@ if aerfield ~= 0;
     db.aer_int_out = cellVal;
     db.aer_quality = cellVal;
     db.aer_median_ssa = cellVal;
+    db.aer_prof_height = cellVal;
 end
 db.column_error = cellVal;
 

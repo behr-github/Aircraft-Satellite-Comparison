@@ -58,6 +58,10 @@ if user_struct_bool
     UserInfo.date_fields = user_fns(xx);
 end
 
+% Check that the second and later structures have the same fields as the
+% first one. We need to use two ismember() calls, once to ensure that all
+% the fields in the new structure are in the first, and once to ensure that
+% all the fields in the first are in the new.
 for a=2:numel(varargin)
     next_fns = fieldnames(varargin{a});
     if ~all(ismember(Info.profnum_fields,next_fns))
@@ -75,14 +79,17 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%
 
 % Get all the profile numbers and dates from each structure, identify
-% unique profiles, and sort them.
+% unique profiles, and sort them.  If a user created structure was passed,
+% it has been removed from the varargin and saved as user_struct, so we can
+% loop over the varargin as automatic structures and just handle the
+% user_struct if needed.
 Out.all_profnums = [];
 Out.all_dates = {};
 for a=1:numel(varargin)
     curr_struct = varargin{a};
     for f=1:numel(Info.profnum_fields)
         if ~isempty(curr_struct.(Info.profnum_fields{f}))
-            Out.all_profnums = cat(1,Out.all_profnums,curr_struct.(Info.profnum_fields{f})(:,1));
+            Out.all_profnums = cat(1,Out.all_profnums,curr_struct.(Info.profnum_fields{f}));
             Out.all_dates = cat(1,Out.all_dates,curr_struct.(Info.date_fields{f}));
         end
     end
@@ -90,32 +97,47 @@ end
 if user_struct_bool
     for f=1:numel(UserInfo.profnum_fields)
         if ~isempty(user_struct.(UserInfo.profnum_fields{f}))
-            Out.all_profnums = cat(1,Out.all_profnums,user_struct.(UserInfo.profnum_fields{f})(:,1));
+            Out.all_profnums = cat(1,Out.all_profnums,user_struct.(UserInfo.profnum_fields{f}));
             Out.all_dates = cat(1,Out.all_dates,user_struct.(UserInfo.date_fields{f}));
         end
     end
 end
 
-[Out.all_profnums, sort_perm] = sort(Out.all_profnums);
+% Next we want to arrange the lines of the table in ascending order and
+% remove duplicates - the idea is that multiple categorizations will have
+% some profiles in common (profiles that were able to be categorized with
+% both sets of criteria) and some that will not overlap (those that failed
+% to be categorized for some reason in one, but not the other). Once we
+% have this list of unique profiles, later we will match them up with the
+% categorizations from each run.
+
+% We're using sortrows here because it will behave correctly for either
+% profile numbers or UTC ranges.
+[Out.all_profnums, sort_perm] = sortrows(Out.all_profnums);
 Out.all_dates = Out.all_dates(sort_perm);
 all_datenums = datenum(Out.all_dates);
 
-keep_prof = true(size(Out.all_profnums));
+keep_prof = true(size(Out.all_dates));
 
-for b=2:numel(Out.all_profnums)
-    if Out.all_profnums(b) == Out.all_profnums(b-1) && all_datenums(b) == all_datenums(b-1)
+% This is where we actually decide figure out which profiles are duplicates
+% and remove them. We use the all() statement to compare the start and end
+% of the UTC ranges, but when dealing with profile numbers, there's only a
+% single profile identifier to compare.
+for b=2:size(Out.all_profnums,1)
+    if all(Out.all_profnums(b,:) == Out.all_profnums(b-1,:)) && all_datenums(b) == all_datenums(b-1)
         keep_prof(b) = false;
     end
 end
 
-Out.all_profnums = Out.all_profnums(keep_prof);
+Out.all_profnums = Out.all_profnums(keep_prof,:);
 Out.all_dates = Out.all_dates(keep_prof);
 all_datenums = all_datenums(keep_prof);
 
 
 % Now loop through each structure and make the table. First column is the
 % dates, second is prof nums, third and on will be the categorization of
-% each profile.
+% each profile. Each field in the structure will become a column in the
+% table, so we will have a field for each categorization carried out.
 
 if user_struct_bool
     Out.UserDefined = cell(size(Out.all_profnums));
@@ -128,9 +150,9 @@ end
 for a=1:numel(varargin)
     curr_struct = varargin{a};
     curr_table_col = sprintf('InputStct%02d',a);
-    Out.(curr_table_col) = cell(size(Out.all_profnums));
+    Out.(curr_table_col) = cell(size(Out.all_dates));
     for f=1:numel(Info.profnum_fields)
-        xx = ismember(Out.all_profnums,curr_struct.(Info.profnum_fields{f})) & ismember(all_datenums,datenum(curr_struct.(Info.date_fields{f})));
+        xx = all(ismember(Out.all_profnums,curr_struct.(Info.profnum_fields{f})),2) & ismember(all_datenums,datenum(curr_struct.(Info.date_fields{f})));
         Out.(curr_table_col)(xx) = Info.profnum_fields(f);
     end
     

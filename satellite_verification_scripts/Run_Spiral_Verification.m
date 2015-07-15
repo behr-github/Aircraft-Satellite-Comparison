@@ -18,7 +18,7 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'discover-md'; % Which campaign this is for. Used to automatically find field names
+campaign_name = 'discover-tx'; % Which campaign this is for. Used to automatically find field names
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
@@ -57,8 +57,8 @@ end
 
 % Start and end times (in military format) for which profiles to consider.
 % General recommendation is +/-1.5 hr from overpass.
-starttime = '12:00';
-endtime = '15:00';
+starttime = '10:30';
+endtime = '16:30';
 
 % Time zone (3 letter abbreviation). Set to 'auto' to determine based on
 % the longitude of the data
@@ -153,7 +153,11 @@ if strcmpi(profnums,'fetch') && nargin > 0
         % that no profiles should be matched; but spiral_verf. uses an
         % empty matrix to indicate that it shouldn't filter the profile
         % numbers at all.
-        profnums = -127;
+        if strcmpi(profile_input, 'ranges')
+            profnums = [-127, -127];
+        else
+            profnums = -127;
+        end
     else
         profnums = profnums_in;
     end
@@ -209,9 +213,14 @@ for d=1:numel(dates)
     if range_bool
         xx = find(strcmp(curr_date,range_dates));
         if isempty(xx);
-            error('run_spiral:ranges','No UTC ranges found for %s',curr_date);
+            if DEBUG_LEVEL > 0; fprintf('No UTC ranges found for %s, skipping\n',curr_date); end
+            continue
         end
         profile_input = Ranges(xx).Ranges;
+        
+        % As we start considering very specific events (e.g. fires) not all
+        % days will have ranges defined. 
+        if isempty(profile_input); continue; end
     end
     
     % If no BEHR or Merge files are ever loaded, we won't get to this line,

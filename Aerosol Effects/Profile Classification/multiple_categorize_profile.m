@@ -121,7 +121,7 @@ for a=1:size(cat_data,1)
     elseif sum(xx_no2) > 1
         OutStruct = out_fxn(OutStruct, cats, xx_no2);
     else
-        diag_reasons(a,1) = cat_data{a,1}; % This is the profile number
+        diag_reasons(a,1) = cat_data{a,1}(1); % This is the profile number. We explicitly take the first element to handle UTC ranges.
         diag_reasons(a,2) = meta_diag_reason(xx_coinc, xx_aer, xx_no2);
     end
     

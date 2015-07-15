@@ -10,7 +10,7 @@ DEBUG_LEVEL = 2;
 %%%%%%%%%%%%%%%%%%%%%%
 
 % Which campaign to calculate the background for
-campaign_name = 'seac4rs';
+campaign_name = 'dc3';
 
 % Data fields of interest to be collected from each fire plume. These
 % should correspond to valid fields in the Names structure returned from
@@ -20,6 +20,11 @@ data_fields = {'no2_lif', 'aerosol_extinction', 'co', 'acn', 'hcn', 'pressure', 
 
 % Use a UTC ranges file? Otherwise will just look for enhanced CO.
 use_utc_ranges = true;
+
+% What fraction of minute-averaged CO data must be greater than 20 ppb
+% enhancement in order for a pre-defined UTC range to be considered
+% containing fire data. 0.8 would be my initial criteria.
+utc_range_co_enh_frac = 0.9;
 
 % The averaging period for enhancement data. Higher values will
 % probably lead to more contiguous plumes, but can miss shorter ones.
@@ -37,6 +42,10 @@ n_sep = 1;
 % How good the correlation between CO and ACN/HCN enhancement has to be to
 % be considered a fire plume (measured by R^2 value)
 r2_min = 0.3;
+
+% The minimum enhancement over background that >50% of the valid 1 sec data
+% points for ACN and HCN must have for a block to be a fire plume.
+min_cyanide_enh = 100; %units are ppt
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
@@ -145,10 +154,28 @@ for a=1:nF
         for b=1:numel(is_fire)
             block_start_utc = Ranges(rr).Ranges(b,1);
             block_end_utc = Ranges(rr).Ranges(b,2);
+            % We'll need to handle the CO enhancement a little differently
+            % when dealing with predefined UTC ranges than when we're
+            % looking for fire plumes with no prior knowledge. 
+            
+            tt = utc_min_start_time >= block_start_utc & utc_min_end_time <= block_end_utc;
+            co_enh_for_range = co_enh_min_avg(tt) > 20;
+            
+            % If fewer of the minute-averaged CO data points wholly within
+            % the defined UTC range have an enhancement less than 20 ppb
+            % than the required fraction, leave this UTC range as "not a
+            % fire"
+            if sum(co_enh_for_range)/numel(co_enh_for_range) < utc_range_co_enh_frac;
+                continue;
+            end
+            
+            % Once we've established that CO enhancement is sufficient,
+            % apply the same additional criteria to this range as we would
+            % when identifying them below.
             is_fire(b) = is_block_fire(block_start_utc, block_end_utc);
         end
         
-        fire_ranges = Ranges(rr).Ranges(is_fire,1:2);
+        fire_ranges = Ranges(rr).Ranges(is_fire,:);
     else
         if DEBUG_LEVEL > 1; fprintf('\tIdentifying fires by CO enhancement\n'); end
         co_enh_bool = double(co_enh_min_avg > 20); % This criterion of 20 ppb above background comes from Alvarado (2010)
@@ -233,8 +260,10 @@ end
 Fires.run_params.campaign = campaign_name;
 Fires.run_params.use_utc_ranges = use_utc_ranges;
 Fires.run_params.r2_min = r2_min;
+Fires.run_params.min_cyanide_enhancement = min_cyanide_enh;
 if use_utc_ranges
     Fires.run_params.range_file = range_file;
+    Fires.run_params.range_co_enh_frac = utc_range_co_enh_frac;
 else   
     Fires.run_params.n_sec_avg = n_sec_avg;
     Fires.run_params.n_sep = n_sep;
@@ -267,7 +296,18 @@ end
         
         % If neither ACN or HCN are correlated with the CO enhancement,
         % this is not a fire plume (Alvarado 2010)
-        fire_bool = r2_acn > r2_min || r2_hcn > r2_min;
+        fire_bool = r2_acn > r2_min && r2_hcn > r2_min;
+        
+        % Require that at least 50% of the ACN and HCN data have
+        % enhancements greater than the required amount to be considered a
+        % fire plume. This will hopefully catch the plumes over Houston and
+        % the SE US during SEAC4RS that apparently pass the correlation
+        % test but don't exhibit the high ACN levels associated with large
+        % fires.
+        frac_acn = sum(block_acn > min_cyanide_enh)/sum(~isnan(block_acn));
+        frac_hcn = sum(block_hcn > min_cyanide_enh)/sum(~isnan(block_hcn));
+        
+        fire_bool = fire_bool && (frac_acn > 0.5 || frac_hcn > 0.5);
     end
 
     function Fires = add_fire_data(Merge, Fires, field_name, fieldname_date)
