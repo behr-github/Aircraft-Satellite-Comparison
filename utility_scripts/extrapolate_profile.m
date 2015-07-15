@@ -65,6 +65,8 @@ function [ data_bins, pres_bins, flag ] = extrapolate_profile( data_in, pres_in,
 %
 %   Josh Laughner <joshlaugh5@gmail.com> Aug 2014
 
+E = JLLErrors;
+
 p = inputParser;
 p.addParameter('shape','exp',@(x) any(strcmpi(x,{'exp','linear'})));
 p.addParameter('surfacePressure',1020,@isscalar);
@@ -179,6 +181,13 @@ else
         case 'none'
             %Do nothing
         case 'median'
+            % This case doesn't really work when there's no existing data
+            % points (i.e. all are below the surface) so we need to error
+            % out if thats the case
+            if all(isnan(data_bins))
+                E.nodata('data_bins');
+            end
+            
             % Find the top npoints data point
             top_points = findbysize(pres_in,npoints,'smallest');
             
@@ -199,6 +208,9 @@ else
             
             % Extrapolate the top data points
             lastbin = find(~isnan(data_bins),1,'last');
+            if isempty(lastbin)
+                lastbin = 0;
+            end
             data_bins((lastbin+1):end) = fit_top(1) .* pres_bins((lastbin+1):end) + fit_top(2);
             
         case {'wrf','wrf-scaled'}
@@ -233,8 +245,11 @@ else
             % either case, replace all following in-situ bins with their
             % (scaled or unscaled) WRF counterparts.
             last_bin = find(~isnan(data_bins),1,'last');
+            if isempty(last_bin)
+                last_bin = 0;
+            end
             
-            if strcmp(top,'wrf-scaled');
+            if strcmp(top,'wrf-scaled') && last_bin > 0;
                 scale_factor = data_bins(last_bin) / wrf_prof_interp(last_bin);
                 wrf_prof_interp = wrf_prof_interp .* scale_factor;
             end
