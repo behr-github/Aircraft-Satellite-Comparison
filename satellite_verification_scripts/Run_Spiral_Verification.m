@@ -18,7 +18,7 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'discover-tx'; % Which campaign this is for. Used to automatically find field names
+campaign_name = 'discover-md'; % Which campaign this is for. Used to automatically find field names
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
@@ -57,8 +57,8 @@ end
 
 % Start and end times (in military format) for which profiles to consider.
 % General recommendation is +/-1.5 hr from overpass.
-starttime = '10:30';
-endtime = '16:30';
+starttime = '12:00';
+endtime = '15:00';
 
 % Time zone (3 letter abbreviation). Set to 'auto' to determine based on
 % the longitude of the data
@@ -82,7 +82,7 @@ numBLpoints = 20; % The number of data points required in the bottom 3 km to ens
 minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to ensure good BL sampling. Hains et. al. recommends 0.5 km (500 m).
 
 % Set to 1 to include ground site data, or 0 to use only aircraft data.
-useground = 1;
+useground = 0;
 
 % These variables are used to subset the aircraft data into profiles used
 % to generate column data to compare against satellite data. 
@@ -105,7 +105,7 @@ useground = 1;
 % range files returned from merge_field_names.  If there is one, that one
 % will be used, otherwise the user is presented with his options.
 profile_input = '';
-profnums = 'fetch'; % set to 'fetch' to use the first input to this function as the profile numbers
+profnums = ''; % set to 'fetch' to use the first input to this function as the profile numbers
 
 
 % Fields for pressure and temperature, set to empty strings to

@@ -435,56 +435,52 @@ else
         return
     end
     [no2_composite, pres_composite] = bin_omisp_pressure(pres(tt),no2(tt));
+    if aerfield ~= 0
+        aer_composite = bin_omisp_pressure(pres(tt), aer_data(tt));
+    end
+    
     % Calculate the uncertainty in the composite bins as the std. error
     [~,~, no2_composite_stderr] = bin_omisp_pressure(pres(tt),no2(tt),'mean');
+    if aerfield ~= 0
+        [~,~, aer_composite_stderr] = bin_omisp_pressure(pres(tt),aer_data(tt),'mean');
+    end
+    
     temp_composite = bin_omisp_pressure(pres(tt),temperature(tt));
+    
     
     % The top bin of bin_omisp_pressure (200 hPa) is right around the normal
     % boundary of the troposphere, 12 km.  If no NO2 data is available, (i.e.
     % that bin has a value of NaN), then we'll extrapolate the median of the
     % top ten NO2 measurements to that bin.  In the loop itself, we'll adjust
     % for the changing tropopause pressure.
-    wasextrap = 0;
     if isnan(no2_composite(end))
-        wasextrap = find(~isnan(temp_composite),1,'last');
+        [no2_composite, no2_composite_stderr] = extrapolate_top_10(no2_composite, no2_composite_stderr, pres_composite, no2, pres, 3);
+    end
+    
+    if isnan(aer_composite(end)) && all(aerfield ~= 0) % Cheaty way to deal with aerfield being a string
+        [aer_composite, aer_composite_stderr] = extrapolate_top_10(aer_composite, aer_composite_stderr, pres_composite, aer_data, pres, 0);
+    end
         
-        M1 = sortrows([pres', no2', temperature']);
-        top = find(~isnan(M1(:,2)),10,'first'); % Since lower pressure = higher altitude, we want the first 10 NO2 measurements when sorted by pressure.
-        no2_comp_top_med = median(M1(top,2)); temp_comp_top_med = nanmedian(M1(top,3)); pres_comp_top_med = nanmedian(M1(top,1));
-        
-        % Assume the error is the standard error of the top ten points
-        no2_comp_top_med_stderr = std(M1(top,2))/sqrt(10);
-        if no2_comp_top_med < 3; 
-            no2_comp_top_med = 1.5; 
-            if DEBUG_LEVEL > 0; fprintf('Composite profile top < LoD\n'); end
-        end
-        no2_composite(end) = no2_comp_top_med;
-        no2_composite_stderr(end) = no2_comp_top_med_stderr;
-        
-        % For the free troposphere we'll use the full campaign composite.
+    if isnan(temp_composite(end))
+        % For the free troposphere temperature, we'll use the full campaign composite.
         nans = isnan(temp_composite);
         lastbin = find(~nans,1,'last');
         nans(1:lastbin)=false;
         tmp = campaign_temperature_profile(campaign_name);
         temp_composite(nans) = tmp(nans);
+    end   
         
-        
-        if isnan(temp_composite(1))
-            nans2 = isnan(temp_composite);
-            temp_composite(nans2) = interp1(log(pres_composite(~nans2)),temp_composite(~nans2),log(pres_composite(nans2)),'linear','extrap');
-        end
-        
-        
-        % Do any interpolation in log-log space (per. Bucsela et. al. J.
-        % Geophys. Res. 2008, 113, D16S31) since pressure has an exponential
-        % relation to altitude.  Log-log space would assume that NO2 also has
-        % an exponential relationship to altitude.
-        [~, no2_tmp, no2_tmperr] = fill_nans(log(pres_composite),log(no2_composite),log(no2_composite_stderr),'noclip');
-        no2_composite = exp(no2_tmp);
-        no2_composite_stderr = exp(no2_tmperr);    
-        
-        
+    if isnan(temp_composite(1))
+        nans2 = isnan(temp_composite);
+        temp_composite(nans2) = interp1(log(pres_composite(~nans2)),temp_composite(~nans2),log(pres_composite(nans2)),'linear','extrap');
     end
+         
+        
+        
+
+    
+    
+    
     
     % Identify all spirals according to the 'profiles' input; reject any
     % without a start time between 10:45 and 4:45, that is, about 3 hours on
@@ -1066,29 +1062,38 @@ else
                     % for aerosol data.
                     aer_quality = bitset(aer_quality,2);
                 end
-                [aerbins] = bin_omisp_pressure(pres_array{p}, aer_array{p});
+                [aerbins, aerbinpres] = bin_omisp_pressure(pres_array{p}, aer_array{p});
                 aer_max = max(aerbins);
                 if isempty(aer_max);
                     aer_max = -9e9;
                 end
                 
-                binwidth = 0.25; % km
-                [aerintbins, aerbinmid] = bin_vertical_profile(alt_array{p}, aer_array{p}, binwidth);
-                [aerbinmid, aerintbins] = fill_nans(aerbinmid,aerintbins);
-                if numel(aerintbins) == 1
+                
+                [aerbinpres, aerbins] = fill_nans(aerbinpres,aerbins,'noclip');
+                if sum(~isnan(aerbins)) == 1
                     % Set the third bit if only one bin had actual data
                     aer_quality = bitset(aer_quality,3);
                 end
+                % Add in the composite profile to get a full tropospheric
+                % profile, but only for NaNs above the first valid bin -
+                % this way we don't accidentally add in bins below the
+                % surface
+                aerbin_nans = find(isnan(aerbins));
+                aerbin_first = find(~isnan(aerbins),1,'first');
+                aerbin_nans(aerbin_nans < aerbin_first) = [];
+                aerbins(aerbin_nans) = aer_composite(aerbin_nans);
+                
+                % Make the top of the pressure the tropopause pressure,
+                % then convert from hPa to m - since extinction is defined
+                % in inverse length, we should integrate over length.
+                aerbinpres(end) = nanmean(tropopause_p);
+                aerbinalt = -log(aerbinpres/1013)*7400;
+                
                 % Integrate, converting the aerosol extinction from Mm^-1
-                % to m^-1 and the bin altitudes from km to m.
-                aer_int = trapz(aerbinmid*1e3, aerintbins*1e-6);
-                % Calculate the height of the aerosol profile as the
-                % difference between the first and last non-NaN bin. This
-                % will give us a criterion to gauge the comparability of
-                % the AOD.
-                aer_bottom = find(~isnan(aerintbins),1,'first');
-                aer_top = find(~isnan(aerintbins),1,'last');
-                aer_prof_height = aerbinmid(aer_top) - aerbinmid(aer_bottom);
+                % to m^-1
+                notnans = ~isnan(aerbins);
+                aer_int = trapz(aerbinalt(notnans), aerbins(notnans)*1e-6);
+
             end
             
             % Check the quality of SSA data. If it is all nans, set the
@@ -1130,7 +1135,6 @@ else
             db.aer_int_out{p} = aer_int;
             db.aer_quality{p} = aer_quality;
             db.aer_median_ssa{p} = aer_ssa; 
-            db.aer_prof_height{p} = aer_prof_height;
         end
         db.column_error{p} = column_error;
         
@@ -1141,6 +1145,53 @@ else
         [prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, db] = cleanUpOutput(prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, db);
     end
 end
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% NESTED FUNCTIONS %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    function [profile, profile_stderr] = extrapolate_top_10(profile, profile_stderr, profile_pres, data, pres_in, lod)
+        % Carries out extrapolation of the median of the top 10 values to
+        % the tropopause pressure. Requires the profile and stderr vector
+        % to be extrapolated, plus the raw data to derive the top median
+        % from. Finally, requires a limit-of-detection value; if the top
+        % median is less than that, it will be set to 1/2 following Hains
+        % et al. 2010.
+        %
+        % Note that this was added after the overall function was written,
+        % so it may not be used everywhere that it can be.
+        
+        M1_fxn = sortrows([pres_in', data']);
+        top_fxn = find(~isnan(M1_fxn(:,2)),10,'first');
+        comp_top_med = median(M1_fxn(top_fxn,2));
+        comp_top_med_stderr = std(M1_fxn(top_fxn,2))/sqrt(numel(top_fxn));
+        if comp_top_med < lod
+            comp_top_med = lod/2;
+            if DEBUG_LEVEL > 0; fprintf('Composite profile top < LoD\n'); end
+        end
+        
+        % Check that the top median is less than the top non-NaN bin of the
+        % profile, if not, print a warning to the user.
+        
+        last_val = find(~isnan(profile),1,'last');
+        if comp_top_med > profile(last_val)
+            warning(' !!!!! Top median (%.1f) > top bin of profile (%.1f). Extrapolation will be odd !!!!!', comp_top_med, profile(last_val));
+        end
+        
+        profile(end) = comp_top_med;
+        profile_stderr(end) = comp_top_med_stderr;
+        
+        % Do any interpolation in log-log space (per. Bucsela et. al. J.
+        % Geophys. Res. 2008, 113, D16S31) since pressure has an
+        % exponential relation to altitude.  Log-log space would assume
+        % that the profile also has an exponential relationship to
+        % altitude.
+        [~, profile_tmp, prof_err_tmp] = fill_nans(log(profile_pres), log(profile), log(profile_stderr), 'noclip');
+        profile = exp(profile_tmp);
+        profile_stderr = exp(prof_err_tmp);
+    end
+
 end
 
 function [lon_out, lat_out, omi_out, behr_out, air_out, db_out] = cleanUpOutput(lon_out, lat_out, omi_out, behr_out, air_out, db_out)
@@ -1223,7 +1274,6 @@ if aerfield ~= 0;
     db.aer_int_out = cellVal;
     db.aer_quality = cellVal;
     db.aer_median_ssa = cellVal;
-    db.aer_prof_height = cellVal;
 end
 db.column_error = cellVal;
 
