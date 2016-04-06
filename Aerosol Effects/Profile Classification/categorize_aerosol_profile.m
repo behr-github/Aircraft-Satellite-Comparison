@@ -18,6 +18,12 @@ function [ output, Diagnostic, expected_classification ] = categorize_aerosol_pr
 %   that have a small maximum aerosol extinction and those with large
 %   maximum extinction.  This is adjustable as the "mag_crit" variable.
 %
+%   The parameter "wavelength" can be the string "blue" or "green" which
+%   will select which wavelength (450 nm or 532 nm respectively) to use for
+%   aerosol extinction data. Blue is more applicable to NO2 retrievals, but
+%   was specially obtained from Lee Thornhill at the NASA LARGE group, and
+%   is not available for ARCTAS.
+%
 %   All information is returned in a structure: three of the fields contain
 %   the criteria used in separating the columns (keeping a record of what
 %   criteria led to the given separation) and the last six are the six
@@ -42,6 +48,7 @@ p.addParameter('crit_frac',[],@(x) (isnumeric(x) && isscalar(x)));
 p.addParameter('dz',[],@(x) (isnumeric(x) && isscalar(x)));
 p.addParameter('mag_crit',[],@(x) (isnumeric(x) && isscalar(x)));
 p.addParameter('mag_crit_type','', @(x) (ischar(x) && any(strcmp(x,{'int','max'}))));
+p.addParameter('wavelength', 'blue', @(x) (ischar(x) && any(strcmpi(x, {'blue', 'green'}))));
 p.addParameter('DEBUG_LEVEL',[],@(x) (isnumeric(x) && isscalar(x)));
 
 p.parse(varargin{:});
@@ -56,6 +63,7 @@ crit_frac = pout.crit_frac;
 dz = pout.dz;
 mag_crit = pout.mag_crit;
 mag_crit_type = pout.mag_crit_type;
+green_bool = logical(strcmpi('green',pout.wavelength));
 
 % Test that if one optional input is passed they all are
 opt_test = [isempty(no2_in), isempty(no2_alt_in), isempty(aer_in), isempty(aer_alt_in)];
@@ -141,7 +149,11 @@ if read_merge_bool
     
     if isempty(aerosol_field)
         fprintf('Setting aerosol extinction field based on the campaign name.\n');
-        aerosol_field = Names.aerosol_extinction;
+        if ~green_bool
+            aerosol_field = Names.aerosol_extinction;
+        else
+            aerosol_field = Names.aerosol_extinction_green;
+        end
     end
     if isempty(no2_field)
         fprintf('Setting NO2 field based on the campaign name.\n');

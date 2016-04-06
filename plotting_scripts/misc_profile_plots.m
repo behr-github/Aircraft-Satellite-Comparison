@@ -5,7 +5,7 @@ function [ varargout ] = misc_profile_plots( plttype, varargin )
 %   them without dozens of .m files taking up space in my directories.
 %
 %   Josh Laughner <joshlaugh5@gmail.com> 10 Jul 2015
-
+E = JLLErrors;
 plttype = lower(plttype);
 switch plttype
     case 'range_shape'
@@ -16,6 +16,8 @@ switch plttype
         plot_profile_no2_aerosol(varargin{1:3});
     case 'cat_comparisons'
         varargout{1} = concatenate_comparisons(varargin{:});
+    case 'dist_curtain'
+        plot_distance_curtain(varargin{:});
     otherwise
         fprintf('Could not recognize plot type\n');
 end
@@ -204,5 +206,48 @@ end
         set(ax(2),'ylim',[0 ymax]);
     end
 
+    function [  ] = plot_distance_curtain(data, lon, lat, alt, center_lon, center_lat)
+        if ndims(data) ~= ndims(lon) || any(size(data) ~= size(lon))
+            E.badinput('data and lon must be the same size')
+        elseif ndims(data) ~= ndims(lat) || any(size(data) ~= size(lat))
+            E.badinput('data and lat must be the same size')
+        elseif ndims(data) ~= ndims(alt) || any(size(data) ~= size(alt))
+            E.badinput('data and alt must be the same size')
+        end
+        
+        if ~isscalar(center_lon) || ~isnumeric(center_lon)
+            E.badinput('center_lon must be scalar numeric');
+        elseif ~isscalar(center_lat) || ~isnumeric(center_lat)
+            E.badinput('center_lat must be scalar numeric')
+        end
+        
+        dist = ( (lon - center_lon).^2 + (lat - center_lat).^2 ).^0.5;
+        dist_lims = [min(min(dist(:)),0), max(max(dist(:)),0)];
+        
+        alt_lims = [min(alt(:)), max(alt(:))];
+        
+        % Ensure the max and min will always be a bin limit, but try to
+        % divide distance into bins of ~0.05 deg and altitude into bins of
+        % ~0.25 km.
+        dist_bins = linspace(dist_lims(1), dist_lims(2), ceil((dist_lims(2) - dist_lims(1))/0.05));
+        alt_bins = linspace(alt_lims(1), alt_lims(2), ceil((alt_lims(2) - alt_lims(1))/0.25));
+        
+        bins = nan(numel(alt_bins)-1, numel(dist_bins)-1);
+        
+        for a=1:(numel(alt_bins)-1)
+            for b=1:(numel(dist_bins)-1)
+                xx = dist >= dist_bins(b) & dist < dist_bins(b+1) & alt >= alt_bins(a) & alt < alt_bins(a+1);
+                bins(a,b) = nanmean(data(xx));
+            end
+        end
+        
+        [X,Y] = meshgrid(dist_bins(1:end-1), alt_bins(1:end-1));
+        
+        figure;
+        pcolor(X,Y,bins);
+        xlabel('Distance (degrees)')
+        ylabel('Altitude (km)')
+        colorbar;
+    end
 end
 

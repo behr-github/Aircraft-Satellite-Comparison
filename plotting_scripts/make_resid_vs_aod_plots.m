@@ -1,4 +1,4 @@
-function [ ComparisonSorted ] = make_resid_vs_aod_plots( Comparison, reldiff_avg, campaign_name, colorby, norm_aod )
+function [ ComparisonSorted ] = make_resid_vs_aod_plots( Comparison, reldiff_avg, campaign_name, colorby )
 %make_resid_vs_aod_plots Function to ease the creation of residual vs AOD plots
 %   I've been making lots of plots of the difference in satellite and
 %   aircraft VCDs vs. AOD.  This function will take a Comparison structure
@@ -19,13 +19,11 @@ function [ ComparisonSorted ] = make_resid_vs_aod_plots( Comparison, reldiff_avg
 %   by various quantities. Currently implemented are: 'airno2', 'behrno2',
 %   and 'ssa'. Make this an empty string if you need to enter a fifth
 %   argument but want nothing to color points by.
-%
-%   The fifth argument determines whether to normalize AOD by profile
-%   height (true or false). Defaults to false.
+
 
 E = JLLErrors;
 % Check input
-narginchk(1,5);
+narginchk(1,4);
 if ~isstruct(Comparison)
     E.badinput('The Comparison input must be a structure');
 end
@@ -46,7 +44,6 @@ ComparisonSorted.coinc.airno2 = cat(1,Comparison(1:2).airno2_iall);
 ComparisonSorted.coinc.behrno2 = cat(1,Comparison(1:2).behrno2_iall);
 ComparisonSorted.coinc.aod = cell2mat(cat(2,Comparison(1).db_iall.aer_int_out,Comparison(2).db_iall.aer_int_out))';
 ComparisonSorted.coinc.ssa = cell2mat(cat(2,Comparison(1).db_iall.aer_median_ssa,Comparison(2).db_iall.aer_median_ssa))';
-ComparisonSorted.coinc.aer_prof_height = cell2mat(cat(2,Comparison(1).db_iall.aer_prof_height, Comparison(2).db_iall.aer_prof_height))';
 if reldiff_avg
     ComparisonSorted.coinc.reldiff = (ComparisonSorted.coinc.behrno2 - ComparisonSorted.coinc.airno2)./mean([ComparisonSorted.coinc.airno2, ComparisonSorted.coinc.behrno2],2) * 100;
 else
@@ -57,7 +54,6 @@ ComparisonSorted.aerabove.airno2 = cat(1,Comparison(3:4).airno2_iall);
 ComparisonSorted.aerabove.behrno2 = cat(1,Comparison(3:4).behrno2_iall);
 ComparisonSorted.aerabove.aod = cell2mat(cat(2,Comparison(3).db_iall.aer_int_out,Comparison(4).db_iall.aer_int_out))';
 ComparisonSorted.aerabove.ssa = cell2mat(cat(2,Comparison(3).db_iall.aer_median_ssa,Comparison(4).db_iall.aer_median_ssa))';
-ComparisonSorted.aerabove.aer_prof_height = cell2mat(cat(2,Comparison(3).db_iall.aer_prof_height, Comparison(4).db_iall.aer_prof_height))';
 if reldiff_avg
     ComparisonSorted.aerabove.reldiff = (ComparisonSorted.aerabove.behrno2 - ComparisonSorted.aerabove.airno2)./mean([ComparisonSorted.aerabove.airno2, ComparisonSorted.aerabove.behrno2],2) * 100;
 else
@@ -68,7 +64,6 @@ ComparisonSorted.no2above.airno2 = cat(1,Comparison(5:6).airno2_iall);
 ComparisonSorted.no2above.behrno2 = cat(1,Comparison(5:6).behrno2_iall);
 ComparisonSorted.no2above.aod = cell2mat(cat(2,Comparison(5).db_iall.aer_int_out,Comparison(6).db_iall.aer_int_out))';
 ComparisonSorted.no2above.ssa = cell2mat(cat(2,Comparison(5).db_iall.aer_median_ssa,Comparison(6).db_iall.aer_median_ssa))';
-ComparisonSorted.no2above.aer_prof_height = cell2mat(cat(2,Comparison(5).db_iall.aer_prof_height, Comparison(6).db_iall.aer_prof_height))';
 if reldiff_avg
     ComparisonSorted.no2above.reldiff = (ComparisonSorted.no2above.behrno2 - ComparisonSorted.no2above.airno2)./mean([ComparisonSorted.no2above.airno2, ComparisonSorted.no2above.behrno2],2) * 100;
 else
@@ -80,15 +75,13 @@ if nargin > 2
     if nargin < 4
         colorby = '';
     end
-    if nargin < 5
-        norm_aod = false;
-    end
-    make_plots(ComparisonSorted, campaign_name, colorby, norm_aod);
+
+    make_plots(ComparisonSorted, campaign_name, colorby);
 end
 
 end
 
-function make_plots(ComparisonSorted, campaign_name, colorby, norm_aod)
+function make_plots(ComparisonSorted, campaign_name, colorby)
 E = JLLErrors;
 goodfields = unique(cat(1,fieldnames(ComparisonSorted.coinc), fieldnames(ComparisonSorted.aerabove), fieldnames(ComparisonSorted.no2above)));
 E.addCustomError('colorby','bad_color_param',sprintf('The parameter (%%s) given for colorby is not available to use; available choices are %s', strjoin(goodfields, ', ')));
@@ -97,17 +90,12 @@ airval_c = ComparisonSorted.coinc.reldiff;
 airval_a = ComparisonSorted.aerabove.reldiff;
 airval_n = ComparisonSorted.no2above.reldiff;
 
-if norm_aod
-    aodval_c = ComparisonSorted.coinc.aod ./ ComparisonSorted.coinc.aer_prof_height;
-    aodval_a = ComparisonSorted.aerabove.aod ./ ComparisonSorted.aerabove.aer_prof_height;
-    aodval_n = ComparisonSorted.no2above.aod ./ ComparisonSorted.no2above.aer_prof_height;
-    x_text = 'AOD/km';
-else
-    aodval_c = ComparisonSorted.coinc.aod;
-    aodval_a = ComparisonSorted.aerabove.aod;
-    aodval_n = ComparisonSorted.no2above.aod;
-    x_text = 'AOD';
-end
+
+aodval_c = ComparisonSorted.coinc.aod;
+aodval_a = ComparisonSorted.aerabove.aod;
+aodval_n = ComparisonSorted.no2above.aod;
+x_text = 'AOD';
+
 
 % Look for fill values and remove
 xx = aodval_c < -1;

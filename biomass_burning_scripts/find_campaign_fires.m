@@ -10,7 +10,7 @@ DEBUG_LEVEL = 2;
 %%%%%%%%%%%%%%%%%%%%%%
 
 % Which campaign to calculate the background for
-campaign_name = 'dc3';
+campaign_name = 'seac4rs';
 
 % Data fields of interest to be collected from each fire plume. These
 % should correspond to valid fields in the Names structure returned from
@@ -19,7 +19,7 @@ data_fields = {'no2_lif', 'aerosol_extinction', 'co', 'acn', 'hcn', 'pressure', 
 
 
 % Use a UTC ranges file? Otherwise will just look for enhanced CO.
-use_utc_ranges = true;
+use_utc_ranges = false;
 
 % What fraction of minute-averaged CO data must be greater than 20 ppb
 % enhancement in order for a pre-defined UTC range to be considered
@@ -311,7 +311,18 @@ end
     end
 
     function Fires = add_fire_data(Merge, Fires, field_name, fieldname_date)
-        data = remove_merge_fills(Merge, Names.(field_name));
+        % If the 
+        try
+            data = remove_merge_fills(Merge, Names.(field_name));
+        catch err
+            % The field may not be defined (can be a 0 or '') which will
+            % cause one of two errors. In that case, just fill it with nans
+            if strcmp(err.identifier,'MATLAB:InputParser:ArgumentFailedValidation') || strcmp(err.identifier,'MATLAB:nonExistentField')
+                data = nan(size(utc));
+            else
+                rethrow(err)
+            end
+        end
         utc_ranges = Fires.(fieldname_date).utc_ranges;
         s = size(utc_ranges,1);
         Fires.(fieldname_date).(field_name) = cell(s,1);

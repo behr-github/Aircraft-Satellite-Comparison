@@ -45,10 +45,9 @@ end
 % allowed so long as there is enough of the prefix there to uniquely
 % identify 1 file per date in the given directory.
 merge_dir = '';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR/';
-%behr_dir = '/Volumes/share-sat/SAT/OMI/Bare_SP_Files/';
-behr_prefix = 'OMI_BEHR_omi*';
-%behr_prefix = 'OMI_SP*';
+behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR_REPROCESSED';
+behr_prefix = 'OMI_BEHR_InSitu_*';
+
 
 if isempty(merge_dir)
     fprintf('Setting merge file directory based on the campaign name.\n');
@@ -121,6 +120,10 @@ behrfield = 'BEHRColumnAmountNO2Trop'; % The field in the Data structure with NO
                                           % Choices include 'ColumnAmountNO2Trop' (OMI SP column), 'BEHRColumnAmountNO2Trop' (BEHR column) 
                                           % and 'BEHR_R_ColumnAmountNO2Trop' only available in files where the column was reprocessed with
                                           % an AMF derived from in-situ measurements.
+
+useghost = 0;   % set to 0 to use visible columns only (in new BEHR)
+                % set to 1 to multiply columns by the ghost factor (if available)
+                % set to 2 to divide columns by g.f. (old method)
 % Debugging variables
 DEBUG_LEVEL = 2; % This will also be passed to the spiral verification function.
 clean = 1; % Set to 0 to keep all pixel comparisons, even those with fill values. 
@@ -253,6 +256,7 @@ for d=1:numel(dates)
             'numBLpoints',numBLpoints,...
             'minRadarAlt',minRadarAlt,...
             'useground',useground,...
+            'useghost',useghost,...
             'DEBUG_LEVEL',DEBUG_LEVEL,... 
             'clean',clean); 
         date_cell{S} = repmat({curr_date},numel(lon_i{S}),1);
@@ -298,6 +302,7 @@ db_iall.run.min_height = min_height;
 db_iall.run.numBLpoints = numBLpoints;
 db_iall.run.minRadarAlt = minRadarAlt;
 db_iall.run.useground = useground;
+db_iall.run.useghost = useghost;
 
 
 if nargout == 0;

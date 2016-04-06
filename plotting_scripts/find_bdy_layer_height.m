@@ -25,7 +25,8 @@ p = inputParser;
 p.addRequired('vals',@isnumeric);
 p.addRequired('altitude', @isnumeric);
 p.addOptional('type','',@isstr);
-p.addParamValue('debug',0,@isscalar);
+p.addParameter('debug',0,@isscalar);
+p.addParameter('altispres',false,@(x) (isscalar(x) && islogical(x)));
 
 p.parse(vals, altitude, varargin{:});
 pout = p.Results;
@@ -33,6 +34,7 @@ vals = pout.vals;
 altitude = pout.altitude;
 find_type = pout.type;
 DEBUG = pout.debug;
+altispres = pout.altispres;
 
 if ~isempty(regexpi(find_type,'theta'))
     delta = diff(vals)./(diff(altitude));
@@ -65,19 +67,36 @@ elseif strcmpi(find_type,'thetalite');
         end
     end
     
-elseif any(strcmpi(find_type,{'exp','expo','exponential'}));
-    % Sort and average same x values so that altitude is a monotonically increasing vector
+elseif any(strcmpi(find_type,{'exp','expo','exponential','exp1.5','exp2'}));
+    % Sort and average same x values so that altitude is a monotonically
+    % increasing vector - decreasing if using pressure
     [altitude, vals] = average_same_x(altitude, vals);
     if ~isrow(altitude); altitude = altitude'; end
     if ~isrow(vals); vals = vals'; end
-    efold = exp(-1) * max(vals(:));
+    if strcmpi(find_type,'exp1.5')
+        e = -1.5;
+    elseif strcmpi(find_type,'exp2')
+        e = -2;
+    else
+        e = -1;
+    end
+    efold = exp(e) * max(vals(:));
     interp_alt = min(altitude):0.01:max(altitude);
     interp_vals = interp1(altitude,vals,interp_alt);
+    if altispres
+        interp_vals = fliplr(interp_vals);
+        interp_alt = fliplr(interp_alt);
+    end
     
     % Find all concentrations that are within 10% of the efolding value and
     % have a negative change in NO2 with altitude
     dx_dz = [diff(interp_vals)./diff(interp_alt), 0];
-    efold_logical = abs(interp_vals - efold)/efold < 0.1 & dx_dz < 0;
+    if altispres
+        d_logical = dx_dz > 0;
+    else
+        d_logical = dx_dz < 0;
+    end
+    efold_logical = abs(interp_vals - efold)/efold < 0.1 & d_logical;
     bl_height = median(interp_alt(efold_logical));
 else
     binwidth = nanmean(diff(altitude));
