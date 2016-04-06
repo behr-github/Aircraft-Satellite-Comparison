@@ -174,6 +174,10 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   flag will still represent whether ground data was available or not, it
 %   just won't be used.
 %
+%   useghost: how to add back in the ghost column. 0 = don't. 1 = new way
+%   (amf / ghost = vcd * ghost), 2 = old way (amf * ghost = vcd / ghost).
+%   If BEHRGhostFraction is not a field in data, this will force to 0.
+%
 %   DEBUG_LEVEL: The level of output messages to write; 0 = none, 1 =
 %   normal; 2 = verbose, 3 = (reserved), 4 = plot NO2 profiles colored by
 %   source - intrinsic, extrapolation, composite
@@ -219,6 +223,7 @@ p.addParameter('min_height',0,@isscalar);
 p.addParameter('numBLpoints',20,@isscalar);
 p.addParameter('minRadarAlt',0.5,@isscalar);
 p.addParameter('useground',1,@isscalar);
+p.addParameter('useghost',0,@isscalar);
 p.addParameter('DEBUG_LEVEL',1,@isscalar);
 p.addParameter('clean',1,@isscalar);
 
@@ -252,6 +257,7 @@ min_height = pout.min_height;
 numBLpoints = pout.numBLpoints;
 minRadarAlt = pout.minRadarAlt;
 useground = pout.useground;
+useghost = pout.useghost;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
 clean_bool = pout.clean;
 
@@ -643,6 +649,8 @@ else
     omi_lat = Data2.Latitude(xx); omi_lon = Data2.Longitude(xx);
     corner_lat = Data2.Latcorn(:,xx); corner_lon = Data2.Loncorn(:,xx);
     omi_no2 = Data2.ColumnAmountNO2Trop(xx);
+    omi_cloudfrac = Data2.CloudFraction(xx);
+    omi_cloudradfrac = Data2.CloudRadianceFraction(xx);
     TropopausePres = Data2.TropopausePressure(xx);
     vza = Data2.ViewingZenithAngle(xx);
     TerrainPres = Data2.TerrainPressure(xx); %load terrain pressure (in hPa)
@@ -679,6 +687,18 @@ else
             rethrow(err)
         end
     end
+    % Try to load the ghost fraction; only present in newest BEHR files.
+    if useghost > 0
+        try
+            ghost = Data2.BEHRGhostFraction(xx);
+        catch err
+            if strcmp(err.identifier,'MATLAB:nonExistentField')
+                if DEBUG_LEVEL > 0; fprintf('BEHRGhostFraction is not present in Data, not using ghost correction\n'); end
+                useghost = 0;
+            end
+        end
+    end
+        
     % Extra fields carried through for curiosity; this is used to calculate
     % stratospheric NO2
     total_omi_no2 = Data2.ColumnAmountNO2(xx);
@@ -745,8 +765,13 @@ else
         omi_no2_p = omi_no2(latlon_logical); behr_no2_p = behr_no2(latlon_logical);
         tropopause_p = TropopausePres(latlon_logical); vza_p = vza(latlon_logical);
         terrain_pres_p = TerrainPres(latlon_logical);
+        omi_cloudfrac_p = omi_cloudfrac(latlon_logical);
+        omi_cloudradfrac_p = omi_cloudradfrac(latlon_logical);
         modis_cloud_p = modis_cloud(latlon_logical); total_omi_no2_p = total_omi_no2(latlon_logical);
         sza_p = sza(latlon_logical); alb_p = alb(latlon_logical);
+        if useghost > 0
+            ghost_p = ghost(latlon_logical);
+        end
         
         % Check each pixel for rejection criteria.
         pix_xx = true(size(omi_no2_p)); pix_reject = prof_reject*uint8(ones(size(pix_xx)));
@@ -799,9 +824,13 @@ else
         loncorn_p = loncorn_p(:,pix_xx); latcorn_p = latcorn_p(:, pix_xx);
         omi_no2_p = omi_no2_p(pix_xx); behr_no2_p = behr_no2_p(pix_xx);
         tropopause_p = tropopause_p(pix_xx); vza_p = vza_p(pix_xx);
+        omi_cloudfrac_p = omi_cloudfrac_p(pix_xx); omi_cloudradfrac_p = omi_cloudradfrac_p(pix_xx);
         modis_cloud_p = modis_cloud_p(pix_xx); total_omi_no2_p = total_omi_no2_p(pix_xx);
         pix_coverage = pix_coverage(pix_xx); terrain_pres_p = terrain_pres_p(pix_xx);
         sza_p = sza_p(pix_xx); alb_p = alb_p(pix_xx);
+        if useghost > 0
+            ghost_p = ghost_p(pix_xx);
+        end
         
         % Calculate the distance vector between the mean lat/lon of the
         % lowest 3 km of the profile and each pixel left.  This can be used
@@ -1042,7 +1071,13 @@ else
         prof_lon_out(p) = nanmean(lon_array{p});
         prof_lat_out(p) = nanmean(lat_array{p});
         omi_no2_out(p) = nanmean(omi_no2_p);
-        behr_no2_out(p) = nanmean(behr_no2_p);
+        if useghost == 0
+            behr_no2_out(p) = nanmean(behr_no2_p);
+        elseif useghost == 1
+            behr_no2_out(p) = nanmean(behr_no2_p .* ghost_p);
+        elseif useghost == 2
+            behr_no2_out(p) = nanmean(behr_no2_p ./ ghost_p);
+        end
         air_no2_out(p) = no2_column;
         
         % Bin the aerosol data for this profile and find the max extinction
@@ -1124,6 +1159,8 @@ else
         db.latcorn{p} = latcorn_p;
         db.loncorn{p} = loncorn_p;
         db.strat_NO2{p} = total_omi_no2_p - omi_no2_p;
+        db.omi_cloudfrac{p} = omi_cloudfrac_p;
+        db.omi_cloudradfrac{p} = omi_cloudradfrac_p;
         db.modis_cloud{p} = modis_cloud_p;
         db.profnums{p} = profnum_array{p};
         db.reject{p} = pix_reject;
@@ -1186,7 +1223,22 @@ end
         % Geophys. Res. 2008, 113, D16S31) since pressure has an
         % exponential relation to altitude.  Log-log space would assume
         % that the profile also has an exponential relationship to
-        % altitude.
+        % altitude.  Because we're doing this in log-log space, we need to
+        % make sure the profile has no negative components. If either the
+        % pressure or std. err profile have negative components, there's a
+        % problem.
+        if any(profile<0)
+            if DEBUG_LEVEL > 0; warning('Setting values in profile < 0 to 0 for log-log interpolation'); end
+            lt0 = profile < 0; 
+            profile(lt0) = 0;
+        end
+        if any(profile_pres < 0)
+            E.callError('negative_pressure', 'One of the values of pressure bins is negative! This should not happen.');
+        elseif any(profile_stderr < 0)
+            E.callError('negative_error', 'One of the value of profile error is negative! This should not happen.');
+        end
+        
+        
         [~, profile_tmp, prof_err_tmp] = fill_nans(log(profile_pres), log(profile), log(profile_stderr), 'noclip');
         profile = exp(profile_tmp);
         profile_stderr = exp(prof_err_tmp);
@@ -1260,6 +1312,8 @@ db.dist_vectors = cellVal;
 db.loncorn = cornVal;
 db.latcorn = cornVal;
 db.strat_NO2 = cellVal;
+db.omi_cloudfrac = cellVal;
+db.omi_cloudradfrac = cellVal;
 db.modis_cloud = cellVal;
 if strcmp(spiral_mode,'profnum'); db.profnums = cellVal;
 else db.profnums = cellRangeVal;

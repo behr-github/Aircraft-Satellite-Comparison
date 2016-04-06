@@ -7,8 +7,12 @@ function [ OutStruct, Diagnostics ] = multiple_categorize_profile( varargin )
 %   multiple critical fractions and taking the most common result from
 %   them, this should overcome that problem.
 %
-%   This requires either 1 or 4 inputs. Either pass a campaign name valid
-%   for merge_field_names as the sole input (as a string) or pass an NO2
+%   This requires either 1, 2 or 4 inputs. In the 1 or 2 argument forms,
+%   pass a campaign name valid for merge_field_names as the first input (as
+%   a string). Pass the string 'green' as the second argument to force this
+%   function to use the original green wavelength aerosol data, instead of
+%   the blue data provided by Lee Thornhill (which better reflects the
+%   aerosol at wavelengths important to NO2 retrievals). or pass an NO2
 %   profile, its corresponding altitudes, an aerosol extinction profile,
 %   and its corresponding altitudes as the four inputs. The first mode will
 %   categorize all profiles in that campaign; the second will categorize
@@ -25,6 +29,14 @@ E = JLLErrors;
 narginchk(1,4);
 if ischar(varargin{1})
     campaign_name = varargin{1};
+    wavelength = 'blue';
+    if numel(varargin) > 1
+        if ischar(varargin{2}) && strcmpi(varargin{2},'green')
+            wavelength = 'green';
+        else
+            E.badinput('The second input, if present and if the first is a campaign name, must be the string "green"');
+        end
+    end
 elseif nargin == 4 && all(iscellcontents(varargin,'isnumeric'))
     no2_in = varargin{1};
     no2_alt_in = varargin{2};
@@ -49,7 +61,7 @@ cat_structs = cell(1,numel(crit_fracs));
 diag_structs = cell(1,numel(crit_fracs));
 for a=1:numel(crit_fracs)
     if nargin < 4
-        [cat_structs{a}, diag_structs{a}] = categorize_aerosol_profile('campaign_name',campaign_name,'crit_frac',crit_fracs(a),'DEBUG_LEVEL',1);
+        [cat_structs{a}, diag_structs{a}] = categorize_aerosol_profile('campaign_name',campaign_name,'crit_frac',crit_fracs(a),'wavelength',wavelength,'DEBUG_LEVEL',1);
         out_fxn = @add_cat;
     else
         [cat_structs{a}, diag_structs{a}] = categorize_aerosol_profile(no2_in, no2_alt_in, aer_in, aer_alt_in,'crit_frac',crit_fracs(a),'DEBUG_LEVEL',1);
