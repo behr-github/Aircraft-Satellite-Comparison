@@ -47,16 +47,16 @@ p.addRequired('Merge',@isstruct);
 p.addRequired('Data',@isstruct);
 p.addRequired('Heights',@isstruct);
 p.addRequired('timezone', @(x) any(strcmpi(x,{'est','cst','mst','pst','auto'})));
-p.addParamValue('no2field','NO2_LIF',@isstr);
-p.addParamValue('altfield','ALTP',@isstr);
-p.addParamValue('presfield','PRESSURE',@isstr);
-p.addParamValue('timerange',{'12:00','15:00'},@iscell)
-p.addParamValue('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis'})));
-p.addParamValue('cloud_frac_max',0.2, @isscalar);
-p.addParamValue('rowanomaly','AlwaysByRow',@(x) strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'}));
-p.addParamValue('starttime','12:00',@isstr);
-p.addParamValue('endtime','15:00',@isstr);
-p.addParamValue('DEBUG_LEVEL',1,@isscalar);
+p.addParameter('no2field','NO2_LIF',@isstr);
+p.addParameter('altfield','ALTP',@isstr);
+p.addParameter('presfield','PRESSURE',@isstr);
+p.addParameter('timerange',{'12:00','15:00'},@iscell)
+p.addParameter('cloud_product','omi',@(x) any(strcmpi(x,{'omi','modis'})));
+p.addParameter('cloud_frac_max',0.2, @isscalar);
+p.addParameter('rowanomaly','AlwaysByRow',@(x) strcmp(x,{'AlwaysByRow','RowsByTime','XTrackFlags','XTrackFlagsLight'}));
+p.addParameter('starttime','12:00',@isstr);
+p.addParameter('endtime','15:00',@isstr);
+p.addParameter('DEBUG_LEVEL',1,@isscalar);
 
 p.parse(Merge,Data,Heights,tz,varargin{:});
 pout = p.Results;
