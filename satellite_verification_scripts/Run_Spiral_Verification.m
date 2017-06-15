@@ -3,9 +3,36 @@
 %   This script will automatically execute sprial_verification.m for each
 %   swath of each day within the range of dates given.
 %
+%   RUN_SPIRAL_VERIFICATION() - uses the default campaign_name and will
+%   include all profiles. Output is placed directly in base workspace.
+%
+%   RUN_SPIRAL_VERIFICATION('all', CAMPAIGN_NAME) - includes all profiles
+%   for the given campaign. See MERGE_FIELD_NAMES for valid campaign names.
+%   This format is necessary to maintain compatibility with
+%   RUN_ALL_AER_CATEGORIES.
+%
+%   RUN_SPRIAL_VERIFICATION(PROFNUMS) - only includes the specified
+%   profiles for the default campaign. Output is placed directly in the
+%   base workspace.
+%
+%   RUN_SPIRAL_VERIFICATION(PROFNUMS, CAMPAIGN_NAME) - only includes the
+%   specified profiles for the given campaign. See MERGE_FIELD_NAMES for
+%   valid campaign names. Output is placed directly in base workspace.
+%
+%   [LON, LAT, OMINO2, BEHRNO2, AIRNO2, DB, DATES] =
+%   RUN_SPIRAL_VERIFICATION(...) with any previous syntax, outputs the
+%   variables as a normal function. LON, LAT are the average profile
+%   lon/lat, OMINO2 and BEHRNO2 are the matched satellite NO2 columns for
+%   NASA SP and BEHR respectively. AIRNO2 is the aircraft VCDs calculated
+%   from the profiles. DB is a structure containing much extra information,
+%   and DATES is a cell array of the dates for each profiles.
+%
+%   In any case, only profiles that intersect at least one valid OMI pixel
+%   are used. 
+%
 %  Josh Laughner <joshlaugh5@gmail.com> 4 Jul 2014
 
-function varargout = Run_Spiral_Verification(profnums_in)
+function varargout = Run_Spiral_Verification(profnums_in, campaign_name)
 
 E = JLLErrors;
 
@@ -18,7 +45,9 @@ E = JLLErrors;
 % to automatically find the campaign dates, the campaign directory, and the
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
-campaign_name = 'discover-tx'; % Which campaign this is for. Used to automatically find field names
+if ~exist('campaign_name','var')
+    campaign_name = 'discover-md'; % Which campaign this is for. Used to automatically find field names
+end
 
 % Grab the dates and directory for the campaign unless the campaign name is
 % empty.
@@ -45,8 +74,8 @@ end
 % allowed so long as there is enough of the prefix there to uniquely
 % identify 1 file per date in the given directory.
 merge_dir = '';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/DISCOVER_BEHR_REPROCESSED';
-behr_prefix = 'OMI_BEHR_InSitu_*';
+behr_dir = '/Volumes/share-sat/SAT/BEHR/AlbedoTestBRDF';
+behr_prefix = 'OMI_BEHR_v2-1B_';
 
 
 if isempty(merge_dir)
@@ -56,8 +85,8 @@ end
 
 % Start and end times (in military format) for which profiles to consider.
 % General recommendation is +/-1.5 hr from overpass.
-starttime = '10:30';
-endtime = '16:30';
+starttime = '12:00';
+endtime = '15:00';
 
 % Time zone (3 letter abbreviation). Set to 'auto' to determine based on
 % the longitude of the data
@@ -161,6 +190,8 @@ if strcmpi(profnums,'fetch') && nargin > 0
         else
             profnums = -127;
         end
+    elseif strcmpi(profnums_in,'all')
+        profnums = [];
     else
         profnums = profnums_in;
     end

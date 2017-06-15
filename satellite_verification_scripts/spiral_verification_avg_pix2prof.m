@@ -659,10 +659,11 @@ else
     vza = Data2.ViewingZenithAngle(xx);
     TerrainPres = Data2.TerrainPressure(xx); %load terrain pressure (in hPa)
     sza = Data2.SolarZenithAngle(xx);
-    % Try to load the BEHR column and MODIS albedo, if they are fields in the Data structure
+    % Try to load the BEHR column if present. If not, it is probably a
+    % standard product file.
     try
         behr_no2 = Data2.(behrfield)(xx);
-        alb = Data2.MODISAlbedo(xx);
+        
     catch err
         % If not, fill the imported variable with fill values
         if strcmp(err.identifier,'MATLAB:nonExistentField')
@@ -674,11 +675,17 @@ else
             rethrow(err)
         end
     end
-    % Try to load the MODIS cloud fraction - not needed within this script,
-    % but included in the output structure "db" to examine if cloud
-    % fraction has an impact on the retrieval
+    % Try to load the MODIS cloud fraction and albedo - not needed within
+    % this script, but included in the output structure "db" to examine if
+    % cloud fraction has an impact on the retrieval or albedo. Prefer the
+    % BRDF albedo, if present.
     try
         modis_cloud = Data2.MODISCloud(xx);
+        if isfield(Data2,'MODISAlbedoBRDF')
+            alb = Data2.MODISAlbedoBRDF(xx);
+        else
+            alb = Data2.MODISAlbedo(xx);
+        end
     catch err
         % If "MODISCloud" is not a field, or if it only contains a single
         % value of "0" or is empty (thus the field was created but never
