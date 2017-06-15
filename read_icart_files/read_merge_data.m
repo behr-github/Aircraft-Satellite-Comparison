@@ -13,21 +13,21 @@ function read_merge_data
 % Set this to 1 to select icart and save directories using a standard file
 % browser window
 
-user_select_dir = 1;
+user_select_dir = 0;
 
 % The location of the campaign (Baltimore_DC, Texas, CA, Colorado). Must
 % match directory structure
-location = 'Texas';
+location = 'P3';
 
 % The file types (e.g. 1 sec merge). Must match directory structure.
-data_type = '1 sec merges';
+data_type = '1sec-SMPS';
 
 % The name of the overall directory containing the files to be read in.
 % Location and merge type will be populated
-icart_path = '/Volumes/share/GROUP/DISCOVER-AQ/';
+icart_path = '/Volumes/share2/USERS/LaughnerJ/CampaignRaw/DISCOVER-AQ_TX/';
 
 % The directory to save the matlab files to
-save_path = '/Volumes/share/GROUP/DISCOVER-AQ/Matlab Files/Aircraft';
+save_path = '/Volumes/share2/USERS/LaughnerJ/CampaignInstrMats/DISCOVER-AQ_TX/P3/1sec-SMPS';
 
 % Set this to 1 to run a single file, set to 0 to run a full directory
 single_file = 0;

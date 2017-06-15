@@ -3,7 +3,7 @@
 % altitude GUI and save the returned UTC ranges in a structure for that
 % campaign.
 
-campaign_name = 'seac4rs';
+campaign_name = 'soas';
 [~,dates,mat_dir] = merge_field_names(campaign_name);
 
 start_date = dates{1};
