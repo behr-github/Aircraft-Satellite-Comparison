@@ -185,6 +185,11 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   clean: Setting this to 0 will not remove any pixels with a fill value -
 %   useful only for debugging why a pixel is rejected.
 %
+%   loncorn, latcorn: Sets the field name to use for pixel corners.
+%   Defaults are FoV75CornerLongitude and FoV75CornerLatitude (prior to 7
+%   Jul 2017, i.e. version 3 of BEHR, these were Loncorn and Latcorn,
+%   respectively)
+%
 % Note to anyone editing this file in the future: there is a subfunction
 % "setReturnVar" that should be used to create the initial instance of the
 % six output variables. It can set them to the null values (nans) or
@@ -224,6 +229,8 @@ p.addParameter('numBLpoints',20,@isscalar);
 p.addParameter('minRadarAlt',0.5,@isscalar);
 p.addParameter('useground',1,@isscalar);
 p.addParameter('useghost',0,@isscalar);
+p.addParameter('loncorn','FoV75CornerLongitude',@ischar);
+p.addParameter('latcorn','FoV75CornerLatitude',@ischar);
 p.addParameter('DEBUG_LEVEL',1,@isscalar);
 p.addParameter('clean',1,@isscalar);
 
@@ -258,6 +265,8 @@ numBLpoints = pout.numBLpoints;
 minRadarAlt = pout.minRadarAlt;
 useground = pout.useground;
 useghost = pout.useghost;
+loncorn_field = pout.loncorn;
+latcorn_field = pout.latcorn;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
 clean_bool = pout.clean;
 
@@ -372,7 +381,7 @@ lon(isnan(lat))=NaN; lat(isnan(lon))=NaN; % Make any points that are NaNs in one
 radar_alt = remove_merge_fills(Merge,radarfield,'alt',altfield);
 pres = remove_merge_fills(Merge,presfield,'alt',altfield);
 temperature = remove_merge_fills(Merge,Tfield,'alt',altfield);
-altfill = eval(sprintf('Merge.Data.%s.Fill',altfield));
+altfill = Merge.Data.(altfield).Fill;
 alt(alt==altfill) = NaN; % Switching to GPS altitude gave fill values for altitude.  These must be removed.
 if aerfield ~= 0
     aer_data = remove_merge_fills(Merge,aerfield);
@@ -651,7 +660,7 @@ else
     xx = Data2.Areaweight > 0;
     
     omi_lat = Data2.Latitude(xx); omi_lon = Data2.Longitude(xx);
-    corner_lat = Data2.Latcorn(:,xx); corner_lon = Data2.Loncorn(:,xx);
+    corner_lat = Data2.(latcorn_field)(:,xx); corner_lon = Data2.(loncorn_field)(:,xx);
     omi_no2 = Data2.ColumnAmountNO2Trop(xx);
     omi_cloudfrac = Data2.CloudFraction(xx);
     omi_cloudradfrac = Data2.CloudRadianceFraction(xx);

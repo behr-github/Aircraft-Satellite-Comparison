@@ -49,7 +49,7 @@ for a=1:numel(ict_dnums)
     Merge.Data = rename_field(Merge.Data, 'GpsLon', 'LONGITUDE');
     Merge.Data = rename_field(Merge.Data, 'GpsLat', 'LATITUDE');
     Merge.Data.LONGITUDE.Values = mod(Merge.Data.LONGITUDE.Values, 360); % put the longitude values on the "degrees east" standard
-    save_name = sprintf('%s%s.mat', save_prefix, datestr(ict_dnums(a), 'yyyymmdd'));
+    save_name = sprintf('%s%s.mat', save_prefix, datestr(ict_dnums(a), 'yyyy_mm_dd'));
     save(fullfile(save_dir, save_name), 'Merge');
 end
 

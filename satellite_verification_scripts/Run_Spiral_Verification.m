@@ -46,7 +46,7 @@ E = JLLErrors;
 % data field names. If you don't want to retrieve this automatically, set
 % this to an empty string.
 if ~exist('campaign_name','var')
-    campaign_name = 'discover-md'; % Which campaign this is for. Used to automatically find field names
+    campaign_name = 'soas'; % Which campaign this is for. Used to automatically find field names
 end
 
 % Grab the dates and directory for the campaign unless the campaign name is
@@ -74,8 +74,8 @@ end
 % allowed so long as there is enough of the prefix there to uniquely
 % identify 1 file per date in the given directory.
 merge_dir = '';
-behr_dir = '/Volumes/share-sat/SAT/BEHR/AlbedoTestBRDF';
-behr_prefix = 'OMI_BEHR_v2-1B_';
+behr_dir = '/Volumes/share-sat/SAT/BEHR/AlbedoTestBRDF/BRDF';
+behr_prefix = 'OMI_BEHR_v2-1C_';
 
 
 if isempty(merge_dir)
@@ -110,7 +110,7 @@ numBLpoints = 20; % The number of data points required in the bottom 3 km to ens
 minRadarAlt = 0.5; % Height above the surface (in km) a profile must be below to ensure good BL sampling. Hains et. al. recommends 0.5 km (500 m).
 
 % Set to 1 to include ground site data, or 0 to use only aircraft data.
-useground = 1;
+useground = 0;
 
 % These variables are used to subset the aircraft data into profiles used
 % to generate column data to compare against satellite data. 
@@ -132,7 +132,7 @@ useground = 1;
 % interest.  If range_file is left blank, the program will look at the
 % range files returned from merge_field_names.  If there is one, that one
 % will be used, otherwise the user is presented with his options.
-profile_input = '';
+profile_input = 'ranges';
 profnums = 'fetch'; % set to 'fetch' to use the first input to this function as the profile numbers
 
 
