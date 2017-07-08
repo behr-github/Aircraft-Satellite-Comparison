@@ -29,5 +29,5 @@ Comparison = struct('Category',aer_cats,'lon_iall',cell(1,6),'lat_iall',cell(1,6
 for c=1:6
     [Comparison(c).lon_iall, Comparison(c).lat_iall, Comparison(c).omino2_iall, Comparison(c).behrno2_iall,...
         Comparison(c).airno2_iall, Comparison(c).db_iall, Comparison(c).dates_iall] =...
-        Run_Spiral_Verification(CatStruct.(aer_cats{c}));
+        Run_Spiral_Verification('profnums', CatStruct.(aer_cats{c}));
 end

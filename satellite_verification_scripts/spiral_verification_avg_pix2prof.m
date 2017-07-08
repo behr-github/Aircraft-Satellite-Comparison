@@ -159,7 +159,8 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   'XTrackFlags', and 'XTrackFlagsLight').
 %
 %   min_height: The minimum difference between the lowest and highest
-%   points in the profile. Defaults to 0, i.e. any profile height.
+%   points in the profile in kilometers. Defaults to 0, i.e. any profile
+%   height.
 %
 %   numBLpoints: The minimum number of data points (valid, not NaNs) in the
 %   lowest 3 km of the atmosphere.  Hains et. al. recommends 20, which is
@@ -173,10 +174,6 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   available. Defaults to true.  If set to 0, the 12th bit of the quality
 %   flag will still represent whether ground data was available or not, it
 %   just won't be used.
-%
-%   useghost: how to add back in the ghost column. 0 = don't. 1 = new way
-%   (amf / ghost = vcd * ghost), 2 = old way (amf * ghost = vcd / ghost).
-%   If BEHRGhostFraction is not a field in data, this will force to 0.
 %
 %   DEBUG_LEVEL: The level of output messages to write; 0 = none, 1 =
 %   normal; 2 = verbose, 3 = (reserved), 4 = plot NO2 profiles colored by
@@ -228,7 +225,6 @@ p.addParameter('min_height',0,@isscalar);
 p.addParameter('numBLpoints',20,@isscalar);
 p.addParameter('minRadarAlt',0.5,@isscalar);
 p.addParameter('useground',1,@isscalar);
-p.addParameter('useghost',0,@isscalar);
 p.addParameter('loncorn','FoV75CornerLongitude',@ischar);
 p.addParameter('latcorn','FoV75CornerLatitude',@ischar);
 p.addParameter('DEBUG_LEVEL',1,@isscalar);
@@ -264,7 +260,6 @@ min_height = pout.min_height;
 numBLpoints = pout.numBLpoints;
 minRadarAlt = pout.minRadarAlt;
 useground = pout.useground;
-useghost = pout.useghost;
 loncorn_field = pout.loncorn;
 latcorn_field = pout.latcorn;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
@@ -375,14 +370,17 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % First handle the aircraft data
-[no2, utc, alt, lon, lat] = remove_merge_fills(Merge,no2field,'alt',altfield);
+[no2, utc, alt, lon, lat] = remove_merge_fills(Merge,no2field, 'alt', altfield);
+
 no2(no2<0) = NaN; % Must remove any negative values from consideration because they will return imaginary components during the log-log interpolation
 lon(isnan(lat))=NaN; lat(isnan(lon))=NaN; % Make any points that are NaNs in one fields also so in the other
-radar_alt = remove_merge_fills(Merge,radarfield,'alt',altfield);
-pres = remove_merge_fills(Merge,presfield,'alt',altfield);
-temperature = remove_merge_fills(Merge,Tfield,'alt',altfield);
+radar_alt = remove_merge_fills(Merge,radarfield,'alt',altfield,'unit','kilometers');
+pres = remove_merge_fills(Merge,presfield,'unit','hPa');
+temperature = remove_merge_fills(Merge,Tfield);
+
 altfill = Merge.Data.(altfield).Fill;
 alt(alt==altfill) = NaN; % Switching to GPS altitude gave fill values for altitude.  These must be removed.
+alt = convert_units(alt, Merge.Data.(altfield).Unit, 'kilometers');
 if aerfield ~= 0
     aer_data = remove_merge_fills(Merge,aerfield);
     ssa_data = remove_merge_fills(Merge,ssafield);
@@ -707,17 +705,6 @@ else
             rethrow(err)
         end
     end
-    % Try to load the ghost fraction; only present in newest BEHR files.
-    if useghost > 0
-        try
-            ghost = Data2.BEHRGhostFraction(xx);
-        catch err
-            if strcmp(err.identifier,'MATLAB:nonExistentField')
-                if DEBUG_LEVEL > 0; fprintf('BEHRGhostFraction is not present in Data, not using ghost correction\n'); end
-                useghost = 0;
-            end
-        end
-    end
         
     % Extra fields carried through for curiosity; this is used to calculate
     % stratospheric NO2
@@ -789,9 +776,6 @@ else
         omi_cloudradfrac_p = omi_cloudradfrac(latlon_logical);
         modis_cloud_p = modis_cloud(latlon_logical); total_omi_no2_p = total_omi_no2(latlon_logical);
         sza_p = sza(latlon_logical); alb_p = alb(latlon_logical);
-        if useghost > 0
-            ghost_p = ghost(latlon_logical);
-        end
         
         % Check each pixel for rejection criteria.
         pix_xx = true(size(omi_no2_p)); pix_reject = prof_reject*uint8(ones(size(pix_xx)));
@@ -848,9 +832,6 @@ else
         modis_cloud_p = modis_cloud_p(pix_xx); total_omi_no2_p = total_omi_no2_p(pix_xx);
         pix_coverage = pix_coverage(pix_xx); terrain_pres_p = terrain_pres_p(pix_xx);
         sza_p = sza_p(pix_xx); alb_p = alb_p(pix_xx);
-        if useghost > 0
-            ghost_p = ghost_p(pix_xx);
-        end
         
         % Calculate the distance vector between the mean lat/lon of the
         % lowest 3 km of the profile and each pixel left.  This can be used
@@ -1091,13 +1072,7 @@ else
         prof_lon_out(p) = nanmean(lon_array{p});
         prof_lat_out(p) = nanmean(lat_array{p});
         omi_no2_out(p) = nanmean(omi_no2_p);
-        if useghost == 0
-            behr_no2_out(p) = nanmean(behr_no2_p);
-        elseif useghost == 1
-            behr_no2_out(p) = nanmean(behr_no2_p .* ghost_p);
-        elseif useghost == 2
-            behr_no2_out(p) = nanmean(behr_no2_p ./ ghost_p);
-        end
+        behr_no2_out(p) = nanmean(behr_no2_p);
         air_no2_out(p) = no2_column;
         
         % Bin the aerosol data for this profile and find the max extinction
