@@ -175,6 +175,10 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   flag will still represent whether ground data was available or not, it
 %   just won't be used.
 %
+%   usecomposite: boolean whether or not to force using the composite NO2
+%   profile, rather than extrapolating from the median of the top 10
+%   measurements.
+%
 %   DEBUG_LEVEL: The level of output messages to write; 0 = none, 1 =
 %   normal; 2 = verbose, 3 = (reserved), 4 = plot NO2 profiles colored by
 %   source - intrinsic, extrapolation, composite
@@ -225,6 +229,7 @@ p.addParameter('min_height',0,@isscalar);
 p.addParameter('numBLpoints',20,@isscalar);
 p.addParameter('minRadarAlt',0.5,@isscalar);
 p.addParameter('useground',1,@isscalar);
+p.addParameter('usecomposite',0,@isscalar);
 p.addParameter('loncorn','FoV75CornerLongitude',@ischar);
 p.addParameter('latcorn','FoV75CornerLatitude',@ischar);
 p.addParameter('DEBUG_LEVEL',1,@isscalar);
@@ -260,6 +265,7 @@ min_height = pout.min_height;
 numBLpoints = pout.numBLpoints;
 minRadarAlt = pout.minRadarAlt;
 useground = pout.useground;
+force_composite = pout.usecomposite;
 loncorn_field = pout.loncorn;
 latcorn_field = pout.latcorn;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
@@ -467,7 +473,7 @@ else
         
         % Assume the error is the standard error of the top ten points
         no2_comp_top_med_stderr = std(M1(top,2))/sqrt(10);
-        if no2_comp_top_med < 3; 
+        if no2_comp_top_med < 3 * 1e-12 / conv_fact; 
             no2_comp_top_med = 1.5; 
             if DEBUG_LEVEL > 0; fprintf('Composite profile top < LoD\n'); end
         end
@@ -919,7 +925,7 @@ else
         % value to the tropopause will grossly overestimate the total
         % column.  In the latter case, append the composite profile on top
         % of the current one.
-        if top_med_no2 < 100;
+        if top_med_no2 < 100 * 1e-12 / conv_fact && ~force_composite;
             no2bins(end) = top_med_no2;
             no2stderr(end) = top_med_no2_stderr;
             topcol = [0 0.7 0];
@@ -1014,7 +1020,7 @@ else
         
         if DEBUG_LEVEL > 3
             figure(f1); line(no2bins,presbins,'color','red');
-            scatter_errorbars(no2bins,presbins,no2stderr,'direction','x','color','k','linewidth',2);
+            %scatter_errorbars(no2bins,presbins,no2stderr,'direction','x','color','k','linewidth',2);
             title(sprintf('%s: profile %d',Merge.metadata.date,profnum_array{p}));
             set(gca,'YDir','reverse');
             fprintf('\nPaused\n');

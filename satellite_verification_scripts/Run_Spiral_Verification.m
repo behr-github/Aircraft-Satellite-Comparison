@@ -204,7 +204,7 @@ p.addParameter('cloudtype', noinput);
 p.addParameter('cloudfrac', noinput);
 p.addParameter('rowanomaly', noinput);
 p.addParameter('behrfield', noinput);
-p.addParameter('debug', noinput);
+p.addParameter('DEBUG_LEVEL', noinput);
 p.addParameter('clean', noinput);
 
 p.parse(varargin{:});
@@ -321,7 +321,7 @@ behrfield = set_input_value('BEHRColumnAmountNO2Trop', 'behrfield'); % The field
                                           % an AMF derived from in-situ measurements.
 
 % Debugging variables
-DEBUG_LEVEL = set_input_value(2, 'debug'); % This will also be passed to the spiral verification function.
+DEBUG_LEVEL = set_input_value(2, 'DEBUG_LEVEL'); % This will also be passed to the spiral verification function.
 clean = set_input_value(1, 'clean'); % Set to 0 to keep all pixel comparisons, even those with fill values. 
 
 

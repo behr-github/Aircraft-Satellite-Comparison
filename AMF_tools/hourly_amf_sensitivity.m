@@ -144,7 +144,7 @@ for s=1:n_sza
                 not_nans = ~isnan(no2_bins_mat(:,p));
                 if sum(not_nans) > 0
                     surfP = max(pres_bins_mat(not_nans,p));
-                    surfP = clip(surfP,200,1013); % the scattering weight lookup cannot handle surface pressures outside this range
+                    surfP = clipmat(surfP,200,1013); % the scattering weight lookup cannot handle surface pressures outside this range
                     sweights = rDamf2(dAmf_file, pres_bins_mat(:,p), szas(s), vzas(v), raa, albs(a), surfP);
                     temperature = rNmcTmp2(tmp_corr_file, pres_bins_mat(:,p), lon, lat, month_in);
                     if ismember(A0_method,{'wrf','geos'})
