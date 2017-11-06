@@ -1,7 +1,7 @@
 % makes campaign composite temperature profiles
 
 %campaigns = {'discover-md','discover-ca','discover-tx','seac4rs','intex-b'};
-campaigns = {'soas'};
+campaigns = {'dc3', 'arctas-carb'};
 
 temps = [];
 pres = [];

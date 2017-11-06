@@ -1,5 +1,26 @@
-function [ varargout ] = read_merge_field( Merge, fieldname )
-%read_merge_field(Merge, fieldname): Read in a merge field along with UTC, altitude, and lat/lon data, replacing fills with nans
+function [ varargout ] = read_merge_field( Merge, fieldname, varargin )
+%READ_MERGE_FIELD Read a fill from a Merge structure, replacing fills with NaNs
+%
+%   [ VALUE ] = READ_MERGE_FIELD( MERGE, FIELDNAME ) will read the Value
+%   field from MERGE.Data.(FIELDNAME), replace any fill, upper LOD, or
+%   lower LOD values with NaNs, and return that as VALUE.
+%
+%   [ VALUE, UTC, ALT, LON, LAT ] = READ_MERGE_FIELD( MERGE, FIELDNAME )
+%   will simultaneously return the UTC time, altitude, longitude, and
+%   latitude, assuming that their field names are "UTC", "ALTP",
+%   "LONGITUDE", and "LATITUDE".
+%
+%   [ ___ ] = READ_MERGE_FIELD( ___, 'unit', UNIT ) will use CONVERT_UNITS
+%   to convert the data given in FIELDNAME from the units listed in the
+%   Merge structure to UNIT.
+
+p = inputParser;
+p.addParameter('unit', '');
+
+p.parse(varargin{:});
+pout = p.Results;
+
+target_unit = pout.unit;
 
 ulod = Merge.metadata.upper_lod_flag;
 llod = Merge.metadata.lower_lod_flag;
@@ -9,6 +30,9 @@ yy = Merge.Data.(fieldname).Values == fill | Merge.Data.(fieldname).Values == ul
 
 data = Merge.Data.(fieldname).Values; 
 data(yy) = NaN;
+if ~isempty(target_unit)
+    data = convert_units(data, Merge.Data.(fieldname).Unit, target_unit);
+end
 varargout{1} = data;
 
 if nargout >= 2

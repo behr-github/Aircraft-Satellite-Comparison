@@ -1,10 +1,15 @@
-function [ Names, dates, directory, range_file, ground_site_dir ] = merge_field_names( campaign_name, ask_ranges )
+function [ Names, dates, directory, range_file, ground_site_dir ] = merge_field_names( campaign_name, ask_ranges, range_file_in )
 %merge_field_names Returns field names of key fields in merge files
 %   Different field campaigns name the same data differently.  This
 %   function will return a structure with all the appropriate field names
 %   for use in any other functions.  This allows this function to be a
 %   central clearing house for field names that any other function can make
 %   use of.
+%
+%   [ NAMES, DATES, DIRECTORY ] = MERGE_FIELD_NAMES( CAMPAIGN_NAME )
+%   returns the field names in NAMES, range of valid DATES as a two element
+%   cell array of strings, and the Merge data DIRECTORY as a string for the
+%   campaign.
 %
 %   Valid campaign designations are:
 %       arctas
@@ -25,7 +30,7 @@ function [ Names, dates, directory, range_file, ground_site_dir ] = merge_field_
 %       theta - potential temperature measurements
 %       no2_lif - Our (Cohen group) NO2 measurements
 %       no2_ncar - Andy Weinheimer's NO2 measurmenets
-%       aerosol_extinction - Aerosol extinction measurments at green 
+%       aerosol_extinction - Aerosol extinction measurments at green
 %           wavelengths
 %       aerosol_scattering - Aerosol scattering only measurements (no
 %           absorption)
@@ -37,16 +42,30 @@ function [ Names, dates, directory, range_file, ground_site_dir ] = merge_field_
 %   Any field that doesn't exist for a given campaign returns an empty
 %   string.
 %
-%   This also returns (as additional outputs) the dates for the campaign,
-%   the directory where the merge files can be found, and (if available)
-%   the UTC ranges file used to define profiles for campaigns without
-%   predefined profile numbers.  In the case where multiple range files are
-%   available, this function will ask the user which one to use, as long as
-%   the range file is requested (i.e. nargout >= 4). If you have 5+ output
-%   arguments but don't want the range file (so its output is ~ in the
-%   function call) you can force this function not to ask about the range
-%   file (and just return it as an empty string) by setting the optional
-%   second argument to false.
+%
+%   [ ___, RANGE_FILE ] = MERGE_FIELD_NAMES( ___ ) will return the path to
+%   a .mat file containing UTC ranges manually identified as profiles. If
+%   there are more than one, it will ask you to choose one. If none are
+%   available, and empty string is returned.
+%
+%   [ ___, RANGE_FILE, GROUND_SITE_DIR ] = MERGE_FIELD_NAMES( ___ ) will
+%   also return the directory with ground site data for the specified
+%   campaign. If not available, it is returned as an empty string.
+%
+%   [ ___, ~, GROUND_SITE_DIR ] = MERGE_FIELD_NAMES( ___, false ) returns
+%   the ground site directory and under no circumstances asks which range
+%   file to use.
+%
+%   [ ___ ] = MERGE_FIELD_NAMES( ___, 'specified' ) will return the first
+%   range file, if one is available. 
+%
+%   [ ___ ] = MERGE_FIELD_NAMES( ___, 'specified', N ) will return the Nth
+%   range file, if one is available. If N > number of range files
+%   available, and error is thrown.
+%
+%   [ ___ ] = MERGE_FIELD_NAMES( ___, 'specified', REGEX ) will return the
+%   file matching the regular expression REGEX. If none or > 1 file match,
+%   an error is thrown.
 
 E = JLLErrors;
 
@@ -57,10 +76,17 @@ if ~ischar(campaign_name)
 end
 if nargin < 2
     ask_ranges = true;
+elseif (ischar(ask_ranges) && strcmpi(ask_ranges, 'specified')) || (islogical(ask_ranges) && ~ask_ranges)
+    ask_ranges = false;
+    if nargin < 3
+        range_file_in = 1; 
+    elseif ~(isscalar(range_file_in) && isnumeric(range_file_in) && range_file_in >= 1) && ~ischar(range_file_in)
+        E.badinput('When specifying a range file, it must either be a scalar number >= 1 (to specify the index in merge_field_names) or the name of a file')
+    end
 elseif ~islogical(ask_ranges) && (~isnumeric(ask_ranges) || ~isscalar(ask_ranges))
     E.badinput('ask_ranges (if given) must be a logical or scalar numeric value')
 end
-    
+
 
 % Setup the fields the output structure is expected to have - this will be
 % validated against before the structure is returned.  That way, if I make
@@ -111,14 +137,14 @@ if ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_name
     Names.profile_numbers = 'ProfileSequenceNum';
     Names.ground_no2 = {'','f_42c_NO2','NO2_conc_ppb','','NO2','NO2'};
     Names.ground_utc = {'','UTC','UTC','','UTC','UTC';...
-                        '','UTC_mid','Mid_UTC','','Mid_UTC','UTC_mid';...
-                        '','UTC_stop','Stop_UTC','','Stop_UTC','UTC_stop'};
+        '','UTC_mid','Mid_UTC','','Mid_UTC','UTC_mid';...
+        '','UTC_stop','Stop_UTC','','Stop_UTC','UTC_stop'};
     
     dates = {'2011-07-01','2011-07-31'};
     directory = fullfile(main_dir,'DISCOVER-AQ_MD','P3','1sec');
     ground_site_dir = fullfile(main_dir,'DISCOVER-AQ_MD','Ground','VariousTimePeriods');
-
-% DISCOVER-CA
+    
+    % DISCOVER-CA
 elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_name,'ca'))
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
@@ -141,14 +167,14 @@ elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_
     Names.profile_numbers = 'ProfileNumber';
     Names.ground_no2 = {'photo_NO2_ppbv','NO2_ppbv','NO2','','','NO2'};
     Names.ground_utc = {'start_secUTC','start_secUTC','UTC_start','','','UTC_start';...
-                        'mid_secUTC','mid_secUTC','UTC_mid','','','UTC_mid';...
-                        'stop_secUTC','stop_secUTC','UTC_stop','','','UTC_stop'};
+        'mid_secUTC','mid_secUTC','UTC_mid','','','UTC_mid';...
+        'stop_secUTC','stop_secUTC','UTC_stop','','','UTC_stop'};
     
     dates = {'2013-01-16','2013-02-06'};
     directory = fullfile(main_dir, 'DISCOVER-AQ_CA','P3','1sec');
     ground_site_dir = fullfile(main_dir,'DISCOVER-AQ_CA','Ground','VariousTimePeriods');
     
-% DISCOVER-TX
+    % DISCOVER-TX
 elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_name,'tx'))
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
@@ -172,14 +198,14 @@ elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_
     Names.profile_numbers = 'ProfileNumber';
     Names.ground_no2 = {'NO2ppbv', 'NO2_ppbv', 'CAPS_NO2_ppbv', 'NO2_099', 'photo_NO2_ppbv', 'NO2_099', '', 'NO2_099'};
     Names.ground_utc = {'UTC_start', 'StartTime_UTsec', 'start_sec-UTC', 'StartTime', 'start_sec-UTC', 'StartTime', '', 'StartTime';...
-                        'UTC_mid', 'MidTime_UTsec', 'mid_sec-UTC', '', 'mid_sec-UTC', '', '', '';...
-                        'UTC_stop', 'StopTime_UTsec', 'stop_sec-UTC', 'StopTime', 'stop_sec-UTC', 'StopTime', '', 'StopTime'};
+        'UTC_mid', 'MidTime_UTsec', 'mid_sec-UTC', '', 'mid_sec-UTC', '', '', '';...
+        'UTC_stop', 'StopTime_UTsec', 'stop_sec-UTC', 'StopTime', 'stop_sec-UTC', 'StopTime', '', 'StopTime'};
     
     dates = {'2013-09-01','2013-09-30'};
     directory = fullfile(main_dir, 'DISCOVER-AQ_TX','P3','1sec');
     ground_site_dir = fullfile(main_dir,'DISCOVER-AQ_TX','Ground','VariousTimePeriods');
     
-% DISCOVER-CO
+    % DISCOVER-CO
 elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_name,'co'))
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
@@ -203,14 +229,14 @@ elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_
     Names.profile_numbers = 'ProfileNumber';
     Names.ground_no2 = {'Photo_NO2_ppbv', 'NO2_ppbv', 'T500_NO2_ppbv', '', 'NO2', 'Photo_NO2_ppbv'};
     Names.ground_utc = {'start_sec-UTC', 'Start_UTC', 'start_sec-UTC', '', 'UTC_start', 'start_sec-UTC';...
-                        'mid_sec-UTC', 'Mid_UTC', 'mid_sec-UTC', '', 'UTC_mid', 'mid_sec-UTC';...
-                        'stop_sec-UTC', 'Stop_UTC', 'stop_sec-UTC', '', 'UTC_stop', 'stop_sec-UTC'};
+        'mid_sec-UTC', 'Mid_UTC', 'mid_sec-UTC', '', 'UTC_mid', 'mid_sec-UTC';...
+        'stop_sec-UTC', 'Stop_UTC', 'stop_sec-UTC', '', 'UTC_stop', 'stop_sec-UTC'};
     
     dates = {'2014-07-17','2014-08-10'};
     directory = fullfile(main_dir, 'DISCOVER-AQ_CO','P3','1sec/');
     ground_site_dir = fullfile(main_dir,'DISCOVER-AQ_CO','Ground','VariousTimePeriods');
     
-% SEAC4RS
+    % SEAC4RS
 elseif ~isempty(regexpi(campaign_name,'seac4rs')) || ~isempty(regexpi(campaign_name,'seacers'));
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
@@ -223,7 +249,7 @@ elseif ~isempty(regexpi(campaign_name,'seac4rs')) || ~isempty(regexpi(campaign_n
     Names.no2_lif = 'NO2_TDLIF';
     Names.no2_ncar = 'NO2_ESRL'; % This is Ryerson's NO2, not sure if that's different from Weinheimer's
     Names.co = 'CO_DACOM';
-    Names.acn = 'Acetonitrile'; % guessing this is Wisthaler's PTRMS 
+    Names.acn = 'Acetonitrile'; % guessing this is Wisthaler's PTRMS
     Names.hcn = 'HCN_CIT'; % guessing this is Wennberg's CIT-CIMS
     Names.aerosol_extinction = 'Lee_ext450nm_amb';
     Names.aerosol_scattering = 'Lee_sc450nm_amb';
@@ -236,13 +262,13 @@ elseif ~isempty(regexpi(campaign_name,'seac4rs')) || ~isempty(regexpi(campaign_n
     directory = fullfile(main_dir, 'SEAC4RS','DC8','1sec');
     
     range_files = {fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_Std.mat'),...
-                    fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_Porpoising.mat'),...
-                    fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_Curtaining.mat'),...
-                    fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_StdFires.mat'),...
-                    fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_CurtainingFires.mat'),...
-                    fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_Std-plus-Curtaining.mat')};
-
-% DC3 (not to be confused with the DC8 aircraft)
+        fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_Porpoising.mat'),...
+        fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_Curtaining.mat'),...
+        fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_StdFires.mat'),...
+        fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_CurtainingFires.mat'),...
+        fullfile(main_dir, 'SEAC4RS','SEAC4RS_Profile_Ranges_Std-plus-Curtaining.mat')};
+    
+    % DC3 (not to be confused with the DC8 aircraft)
 elseif ~isempty(regexpi(campaign_name,'dc3'))
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
@@ -255,7 +281,7 @@ elseif ~isempty(regexpi(campaign_name,'dc3'))
     Names.no2_lif = 'NO2_TDLIF';
     Names.no2_ncar = 'NO2_ESRL'; % This is Ryerson's NO2, not sure if that's different from Weinheimer's
     Names.co = 'CO_DACOM';
-    Names.acn = 'Acetonitrile_PTRMS'; % guessing this is Wisthaler's PTRMS 
+    Names.acn = 'Acetonitrile_PTRMS'; % guessing this is Wisthaler's PTRMS
     Names.hcn = 'HCN_CIT';  % guessing this is Wennberg's CIT-CIMS
     Names.aerosol_extinction = 'Lee_ext450nm_amb';
     Names.aerosol_scattering = 'Lee_sc450nm_amb';
@@ -268,9 +294,9 @@ elseif ~isempty(regexpi(campaign_name,'dc3'))
     directory = fullfile(main_dir, 'DC3','DC8','1sec');
     
     range_files = {fullfile(main_dir, 'DC3', 'DC3_Profile_Ranges_Std.mat'),...
-                    fullfile(main_dir, 'DC3', 'DC3_Profile_Ranges_Curtaining.mat')};
+        fullfile(main_dir, 'DC3', 'DC3_Profile_Ranges_Curtaining.mat')};
     
-% ARCTAS (-B and -CARB)
+    % ARCTAS (-B and -CARB)
 elseif ~isempty(regexpi(campaign_name,'arctas'))
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
@@ -306,7 +332,7 @@ elseif ~isempty(regexpi(campaign_name,'arctas'))
         E.badinput('Campaign is one of the ARCTAS segments, but could not ID which one (carb or b)')
     end
     
-% INTEX-B
+    % INTEX-B
 elseif ~isempty(regexpi(campaign_name,'intex')) && ~isempty(regexpi(campaign_name,'b'))
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
@@ -317,7 +343,7 @@ elseif ~isempty(regexpi(campaign_name,'intex')) && ~isempty(regexpi(campaign_nam
     Names.pressure = 'STAT_PRESSURE';
     Names.theta = 'THETA';
     Names.no2_lif = 'NO2';
-    Names.no2_ncar = ''; 
+    Names.no2_ncar = '';
     Names.aerosol_extinction = 0;
     Names.aerosol_scattering = 0;
     Names.aerosol_ssa = 0;
@@ -327,14 +353,14 @@ elseif ~isempty(regexpi(campaign_name,'intex')) && ~isempty(regexpi(campaign_nam
     directory = fullfile(main_dir, 'INTEX-B','DC8','1sec');
     
     range_files = {fullfile(main_dir, 'INTEX-B','INTEXB_Profile_UTC_Ranges.mat'),...
-                   fullfile(main_dir, 'INTEX-B','INTEXB_Profile_UTC_Ranges_Inclusive.mat')};
-               
-% TEXAQS
+        fullfile(main_dir, 'INTEX-B','INTEXB_Profile_UTC_Ranges_Inclusive.mat')};
+    
+    % TEXAQS
 elseif ~isempty(regexpi(campaign_name,'texaqs','once'))
     directory = fullfile(main_dir, 'TexAQS2000','Electra','WAS');
     dates = {'2000-08-16','2000-09-13'};
     
-% SOAS 
+    % SOAS
 elseif ~isempty(regexpi(campaign_name, 'soas', 'once'))
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
@@ -360,27 +386,35 @@ end
 % string.  Only do this if the range file is actually output to a variable,
 % otherwise, don't waste the user's time.
 
-if nargout >= 4 && ask_ranges
+if nargout >= 4
     n = numel(range_files);
     if n == 1
         range_file = range_files{1};
     elseif n > 1
-        while true
-            opts_nums = 1:n;
+        if ask_ranges
             opts_str = cell(1,n);
             for a=1:n
-                [~,file] = fileparts(range_files{a});
-                opts_str{a} = sprintf('%d: %s',opts_nums(a),file);
+                [~,opts_str{a}] = fileparts(range_files{a});
             end
-            opts_spec = repmat('\t%s\n',1,n);
-            opts_msg = sprintf('Enter the number for which range file to use:\n%s> ',opts_spec);
-            rf_choice = input(sprintf(opts_msg,opts_str{:}));
-            if rf_choice >= 1 && rf_choice <= n
-                range_file = range_files{rf_choice};
-                break;
+            user_choice = ask_multichoice('Choose a range file', opts_str, 'list', true, 'index', true);
+            range_file = range_files{user_choice};
+        elseif ischar(range_file_in)
+            % Try to match the filename given to one of the listed file
+            % names
+            xx = ~iscellcontents(regexp(range_files, range_file_in), 'isempty');
+            if sum(xx) == 1
+                range_file = range_files{xx};
             else
-                fprintf('\n\n%d is not a valid option.\n',rf_choice);
+                E.callError('no_range_found', 'Found %d range files matching "%s" for %s:\n\t%s', sum(xx), range_file_in, campaign_name, strjoin(range_files(xx), '\n\t'));
             end
+        elseif isnumeric(range_file_in)
+            if range_file_in <= n
+                range_file = range_files{range_file_in};
+            else
+                E.callError('bad_range_index', 'The given range file index (%d) exceeds the number of files available for %s (%d)', range_file_in, campaign_name, n);
+            end
+        else
+            E.notimplemented('Unexpected type or value of range_file_in');
         end
     else
         range_file = '';
@@ -388,7 +422,6 @@ if nargout >= 4 && ask_ranges
 else
     range_file = '';
 end
-
 
 % Check that all the fields of the output structure are what we expect
 fields = fieldnames(Names);

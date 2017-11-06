@@ -179,6 +179,13 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   profile, rather than extrapolating from the median of the top 10
 %   measurements.
 %
+%   surf_pres_choice: controls what happens if, in a profile, the surface
+%   pressure derived from the aircraft's (altitude - radar altitude) is
+%   above the second data bin with valid data. Default is 'ask', meaning
+%   ask the user what to do in each case. Other options are 'yes' (proceed
+%   with the profile), 'no' (do not use the profile, but continue the run),
+%   or 'abort run' (stop the run).
+%
 %   DEBUG_LEVEL: The level of output messages to write; 0 = none, 1 =
 %   normal; 2 = verbose, 3 = (reserved), 4 = plot NO2 profiles colored by
 %   source - intrinsic, extrapolation, composite
@@ -234,6 +241,7 @@ p.addParameter('loncorn','FoV75CornerLongitude',@ischar);
 p.addParameter('latcorn','FoV75CornerLatitude',@ischar);
 p.addParameter('DEBUG_LEVEL',1,@isscalar);
 p.addParameter('clean',1,@isscalar);
+p.addParameter('surf_pres_choice','ask',@ischar);
 
 p.parse(Merge,Data,timezone,varargin{:});
 pout = p.Results;
@@ -270,6 +278,7 @@ loncorn_field = pout.loncorn;
 latcorn_field = pout.latcorn;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
 clean_bool = pout.clean;
+surface_pres_override = pout.surf_pres_choice;
 
 merge_datenum = datenum(Merge.metadata.date);
 
@@ -651,15 +660,24 @@ else
     % too great a cloud fraction, etc.
     
     Data.Areaweight = ones(size(Data.Longitude));
-    if DEBUG_LEVEL > 0; fprintf('   Rejecting with omi_pixel_reject.m\n'); end
-    try % Handles the case of both BEHR files and SP-only files
-        Data2 = omi_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
-    catch err;
-        if strcmp(err.identifier,'MATLAB:nonExistentField');
-            Data2 = omi_sp_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
-        else
-            rethrow(err)
-        end
+    if isfield(Data, 'BEHRQualityFlags')
+        % The BEHRQualityFlags field was added in v3.0A of BEHR, so as long
+        % as it's present, we can use the newest version of
+        % omi_pixel_reject.
+        if DEBUG_LEVEL > 0; fprintf('   Rejecting with omi_pixel_reject.m\n'); end
+        reject_detail = struct('cloud_type', cloud_prod, 'cloud_frac', cloud_frac_max,...
+            'row_anom_mode', rowanomaly, 'check_behr_amf', true);
+        Data2 = omi_pixel_reject(Data,'detailed',reject_detail);
+    elseif isfield(Data, 'BEHRColumnAmountNO2Trop')
+        % If there's a BEHR NO2 column field but not the BEHR quality flags
+        % field, we're probably working with version 2 data.
+        if DEBUG_LEVEL > 0; fprintf('   Rejecting with omi_pixel_reject_v2.m\n'); end
+        Data2 = omi_pixel_reject_v2(Data, cloud_prod, cloud_frac_max, rowanomaly);
+    else
+        % If the BEHR NO2 column field isn't in Data, it's definitely not a
+        % BEHR file, so use the SP reject field.
+        if DEBUG_LEVEL > 0; fprintf('   Rejecting with omi_sp_pixel_reject.m\n'); end
+        Data2 = omi_sp_pixel_reject(Data,cloud_prod,cloud_frac_max,rowanomaly);
     end
     xx = Data2.Areaweight > 0;
     
@@ -972,14 +990,18 @@ else
         % If the surface pressure is less (i.e. above) the second
         % remaining bin, check with the user to proceed.
         if surface_pres < presbins(2);
-            queststring = sprintf('Surface P (%.4f) less than second bin (%.4f). \nLow alt radar nan flag (radar and NO2 measurements not coincident) is %d. \n Continue?',surface_pres, presbins(2), bitget(q_flag,6));
-            if MATLAB_DISPLAY
-                choice = questdlg(queststring,'Surface pressure','Yes','No','Abort run','No');
+            if strcmpi(surface_pres_override, 'ask')
+                queststring = sprintf('Surface P (%.4f) less than second bin (%.4f). \nLow alt radar nan flag (radar and NO2 measurements not coincident) is %d. \n Continue?',surface_pres, presbins(2), bitget(q_flag,6));
+                if MATLAB_DISPLAY
+                    choice = questdlg(queststring,'Surface pressure','Yes','No','Abort run','No');
+                else
+                    queststring = sprintf('%s: [Yes] / No / Abort run',queststring);
+                    choice = input(queststring,'s');
+                end
+                choice = lower(choice);
             else
-                queststring = sprintf('%s: [Yes] / No / Abort run',queststring);
-                choice = input(queststring,'s');
+                choice = lower(surface_pres_override);
             end
-            choice = lower(choice);
             switch choice
                 case 'no'
                     if DEBUG_LEVEL > 0; fprintf('\tSkipping this column because surface pressure is smaller than the second bin with valid data.\n'); end 
@@ -1092,6 +1114,7 @@ else
                 aer_quality = bitset(aer_quality,1);
                 aer_max = -9e9;
                 aer_int = -9e9;
+                aer_prof_height = -9e9;
             else
                 if sum(isnan(aer_array{p}))/numel(aer_array{p}) > 0.9
                     % Set the second bit if >90% of the profile has NaNs
