@@ -124,7 +124,13 @@ function [ prof_lon_out, prof_lat_out, omi_no2_out, behr_no2_out, air_no2_out, d
 %   default to the LIF (our data) field, field name determined by calling
 %   merge_field_names with the campaign name specified. If set to 'cl',
 %   will use the chemiluminescence data - NCAR if available, NOAA
-%   otherwise.. Otherwise will use the field specified by the string given.
+%   otherwise. Otherwise will use the field specified by the string given.
+%
+%   conv_fact: conversion factor that, when multiplied by NO2 data, will
+%   convert that data into unscaled mixing ratio (parts-per-part). This is
+%   not used unless CONVERT_UNITS() cannot convert the unit given in the
+%   Merge structure, in which case, if this is not given, an error is
+%   thrown.
 %
 %   altfield: If unspecified or set to 'gps' uses the GPS altitude field
 %   for the campaign, if set to 'pressure', uses the pressure altitude
@@ -222,7 +228,7 @@ p.addParameter('campaign_name','',@isstr);
 p.addParameter('profiles',[], @(x) size(x,2)==2 || ischar(x));
 p.addParameter('profnums',[], @(x) (isvector(x) || isempty(x) || size(x,2)==2));
 p.addParameter('no2field','',@isstr);
-p.addParameter('conv_fact',1e-12,@isscalar);
+p.addParameter('conv_fact',NaN,@isscalar);
 p.addParameter('altfield','',@isstr);
 p.addParameter('radarfield','',@isstr);
 p.addParameter('presfield','',@isstr);
@@ -384,8 +390,23 @@ end
 %%%%%     LOAD DATA     %%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% First handle the aircraft data
-[no2, utc, alt, lon, lat] = remove_merge_fills(Merge,no2field, 'alt', altfield);
+% First handle the aircraft data. Convert NO2 into unscaled mixing ratio,
+% which will simplify all our later calculations.
+try
+    [no2, utc, alt, lon, lat] = remove_merge_fills(Merge,no2field, 'alt', altfield, 'unit', 'ppp');
+catch err
+    if strcmp(err.identifier, 'convert_units:unit_not_found')
+        if isnan(conv_fact)
+            E.callError('unknown_units', 'Units for NO2 field (%s) unknown; give a non-NaN value for the "conv_fact" parameter to specify how to convert NO2 to unscaled mixing ratio', Merge.Data.(no2field).Unit)
+        else
+        [no2, utc, alt, lon, lat] = remove_merge_fills(Merge,no2field, 'alt', altfield);
+        no2 = no2 * conv_fact;
+        warning('read_no2:unknown_unit', 'Units for NO2 field (%s) unknown, converting NO2 to mixing ratio with given conversion factor (%g)', Merge.Data.(no2field).Unit, conv_fact);
+        end
+    else
+        rethrow(err)
+    end
+end
 
 no2(no2<0) = NaN; % Must remove any negative values from consideration because they will return imaginary components during the log-log interpolation
 lon(isnan(lat))=NaN; lat(isnan(lon))=NaN; % Make any points that are NaNs in one fields also so in the other
@@ -480,10 +501,12 @@ else
         top = find(~isnan(M1(:,2)),10,'first'); % Since lower pressure = higher altitude, we want the first 10 NO2 measurements when sorted by pressure.
         no2_comp_top_med = median(M1(top,2)); temp_comp_top_med = nanmedian(M1(top,3)); pres_comp_top_med = nanmedian(M1(top,1));
         
-        % Assume the error is the standard error of the top ten points
+        % Assume the error is the standard error of the top ten points. NO2
+        % values should be given in mixing ratio (parts per part).
         no2_comp_top_med_stderr = std(M1(top,2))/sqrt(10);
-        if no2_comp_top_med < 3 * 1e-12 / conv_fact; 
-            no2_comp_top_med = 1.5; 
+
+        if no2_comp_top_med < 3e-12; 
+            no2_comp_top_med = 1.5 * 1e-12; 
             if DEBUG_LEVEL > 0; fprintf('Composite profile top < LoD\n'); end
         end
         no2_composite(end) = no2_comp_top_med;
@@ -901,9 +924,10 @@ else
         end
         
         %Hains substitutes 1.5 ppt for any median no2 mixing ratios
-        %less than the LoD (3 ppt)
-        if top_med_no2 < 3;
-            top_med_no2 = 1.5;
+        %less than the LoD (3 ppt). NO2 values should be given in mixing
+        %ratio (parts-per-part)
+        if top_med_no2 < 3e-12;
+            top_med_no2 = 1.5e-12;
             if DEBUG_LEVEL>0; fprintf('Profile top median NO2 < LoD\n'); end
         end
         
@@ -1037,7 +1061,7 @@ else
         
         % Will insert ground NO2 as the bottom bin, otherwise returns
         % no2bins and no2stderr unchanged.
-        [no2bins, no2stderr, q_flag] = add_ground_no2(no2bins, no2stderr, q_flag, profnum_array{p}, prof_tzs{p}, spiral_mode, start_times(p), end_times(p), ground_site_dir, conv_fact, useground, Merge, FieldNames, DEBUG_LEVEL);
+        [no2bins, no2stderr, q_flag] = add_ground_no2(no2bins, no2stderr, q_flag, profnum_array{p}, prof_tzs{p}, spiral_mode, start_times(p), end_times(p), ground_site_dir, useground, Merge, FieldNames, DEBUG_LEVEL);
         
         
         if DEBUG_LEVEL > 3
@@ -1071,7 +1095,7 @@ else
         no2_column = 0;
         for z=1:numel(alt_profile)
             P_z = pres_profile(z); T = temp_profile(z); no2_z = no2_profile(z);
-            conc_NO2 = (Av * P_z * no2_z * conv_fact)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv
+            conc_NO2 = (Av * P_z * no2_z)/(R * T); % molec./cm^3, mixing ratio of NO2 is in pptv
             no2_column = no2_column + conc_NO2 * dz * 100; % Integrating in 100dz cm increments
         end
         
@@ -1087,8 +1111,8 @@ else
         % convert altitude bins from km to cm (hence the factor of 1e5).
         % Also, NO2 values are usually reported (by us at least) in pptv,
         % hence the conv_fact defaults to 1e-12.
-        column_error = sqrt( sum( ((altbins(2:end) - altbins(1:end-1))*1e5/2).^2 .* (no2stderr(2:end).*conv_fact).^2 .* Nair(2:end).^2 +...
-            ((altbins(2:end) - altbins(1:end-1))*1e5/2).^2 .* (no2stderr(1:end-1).*conv_fact).^2 .* Nair(1:end-1).^2 ) );
+        column_error = sqrt( sum( ((altbins(2:end) - altbins(1:end-1))*1e5/2).^2 .* no2stderr(2:end).^2 .* Nair(2:end).^2 +...
+            ((altbins(2:end) - altbins(1:end-1))*1e5/2).^2 .* no2stderr(1:end-1).^2 .* Nair(1:end-1).^2 ) );
         % Double check that this number is a scalar. This will catch if a
         % matrix (rather than a vector) slips into this calculation.
         if ~isscalar(column_error)
@@ -1294,7 +1318,7 @@ assignin('caller','air_no2_out',air_no2_out);
 assignin('caller','db',db);
 end
 
-function [no2bins, no2stderr, q_flag] = add_ground_no2(no2bins, no2stderr, q_flag, profnum, prof_tz, spiral_mode, start_time, end_time, ground_site_dir, conv_fact, useground, Merge, FieldNames, DEBUG_LEVEL)
+function [no2bins, no2stderr, q_flag] = add_ground_no2(no2bins, no2stderr, q_flag, profnum, prof_tz, spiral_mode, start_time, end_time, ground_site_dir, useground, Merge, FieldNames, DEBUG_LEVEL)
     E = JLLErrors;
     
     if ~isempty(ground_site_dir) && strcmpi(spiral_mode,'profnum')
@@ -1313,30 +1337,17 @@ function [no2bins, no2stderr, q_flag] = add_ground_no2(no2bins, no2stderr, q_fla
             GM = load(fullfile(ground_site_dir,F(1).name));
             ground_utc = remove_merge_fills(GM.Merge,FieldNames.ground_utc{1,sitenum});
             ground_utcstop = remove_merge_fills(GM.Merge,FieldNames.ground_utc{3,sitenum});
-            ground_no2_vec = remove_merge_fills(GM.Merge,FieldNames.ground_no2{sitenum});
+            % If the ground NO2 is an unknown unit, this will fail.
+            % Currently I don't have anything set up to allow you to pass
+            % in a conversion factor for the ground NO2.
+            ground_no2_vec = remove_merge_fills(GM.Merge,FieldNames.ground_no2{sitenum}, 'unit', 'ppp');
+
 
             % Convert the UTC values to local time (in seconds
             % after midnight). Use the timezone defined for this
             % profile.
             ground_utc = utc2local_sec(ground_utc,prof_tz);
             ground_utcstop = utc2local_sec(ground_utcstop,prof_tz);
-
-            % Convert the ground no2 to the same units as the
-            % aircraft no2
-            ground_no2_unit = GM.Merge.Data.(FieldNames.ground_no2{sitenum}).Unit;
-            i = regexpi(ground_no2_unit,'pp[mbt]');
-            ground_no2_unit_switch = ground_no2_unit(i:i+2);
-            switch ground_no2_unit_switch
-                case {'ppm','ppmv'}
-                    ground_conv = 1e-6;
-                case {'ppb','ppbv'}
-                    ground_conv = 1e-9;
-                case {'ppt','pptv'}
-                    ground_conv = 1e-12;
-                otherwise
-                    E.callError('ground_no2_unit',sprintf('Could not parse the ground NO2 unit: %s',ground_no2_unit));
-            end
-            ground_no2_vec = ground_no2_vec * ground_conv / conv_fact;
 
             % Some sites have ~minute averaging, some have ~hourly.
             % To cover all cases, we first look for measurements

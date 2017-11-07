@@ -23,7 +23,7 @@ for a=1:numel(F)
     this_particle_count = zeros(size(M.Merge.Data.(aitken_fns{1}).Values));
     for b=1:numel(aitken_fns)
         % Add up the bins in the aitken mode
-        val = read_merge_field(M.Merge, aitken_fns{b});
+        val = remove_merge_fills(M.Merge, aitken_fns{b});
         this_particle_count = this_particle_count + val;
     end
     particle_counts = veccat(particle_counts, this_particle_count);
