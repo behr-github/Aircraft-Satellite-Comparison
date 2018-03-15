@@ -967,7 +967,7 @@ else
         % value to the tropopause will grossly overestimate the total
         % column.  In the latter case, append the composite profile on top
         % of the current one.
-        if top_med_no2 < 100 * 1e-12 / conv_fact && ~force_composite;
+        if top_med_no2 < 100 * 1e-12 && ~force_composite;
             no2bins(end) = top_med_no2;
             no2stderr(end) = top_med_no2_stderr;
             topcol = [0 0.7 0];

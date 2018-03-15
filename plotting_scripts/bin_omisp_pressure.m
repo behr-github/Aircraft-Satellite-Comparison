@@ -18,7 +18,7 @@ function [ bin_values, bin_midpoints, bin_errors, bin_edges ] = bin_omisp_pressu
 p = inputParser;
 p.addRequired('pressure',@isnumeric);
 p.addRequired('data_values',@isnumeric);
-p.addOptional('binmode','median',@(x) any(strcmpi(x,{'median','mean'})));
+p.addOptional('binmode','median',@(x) any(strcmpi(x,{'median','mean','binonly'})));
 
 
 p.parse(pressure, data_values, varargin{:});
@@ -61,11 +61,18 @@ for a=1:numel(bin_midpoints)
 end
 
 % Do the binning. 
-bin_values = zeros(1,size(bins,1)); % output as row
+if strcmpi(binmode, 'binonly')
+    bin_values = cell(1,size(bins,1));
+else
+    bin_values = zeros(1,size(bins,1)); % output as row
+end
+
 if strcmpi(binmode,'mean') % For means, we output the std. dev.
     bin_errors = zeros(1,size(bins,1));
-else % For medians, we use the 25th and 75th quartiles
+elseif strcmpi(binmode,'median') % For medians, we use the 25th and 75th quartiles
     bin_errors = zeros(2,size(bins,1));
+else % For just binning, there is no need for bin_errors
+    bin_errors = [];
 end
 
 for a=1:numel(bin_values)
@@ -73,9 +80,11 @@ for a=1:numel(bin_values)
     if strcmpi(binmode,'mean')
         bin_values(a) = nanmean(bin_data_vals(:));
         bin_errors(a) = nanstd(bin_data_vals(:)) / sqrt(numel(bin_data_vals));
-    else
+    elseif strcmpi(binmode, 'median')
         bin_values(a) = nanmedian(bin_data_vals(:));
         bin_errors(:,a) = quantile(bin_data_vals(:),[0.25,0.75]);
+    else
+        bin_values{a} = bin_data_vals(:);
     end
 end 
 
