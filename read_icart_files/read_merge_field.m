@@ -15,7 +15,7 @@ function [ varargout ] = read_merge_field( Merge, fieldname, varargin )
 %   Merge structure to UNIT.
 
 
-error('deprecated:superior_function', 'This function is no longer supported; use REMOVE_MERGE_FIELDS INSTEAD');
+error('deprecated:superior_function', 'This function is no longer supported; use REMOVE_MERGE_FILLS INSTEAD');
 
 
 end

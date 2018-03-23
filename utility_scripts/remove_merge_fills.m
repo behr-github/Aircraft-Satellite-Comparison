@@ -22,7 +22,7 @@ function [ data, varargout ] = remove_merge_fills( Merge, field, varargin )
 %   by convert_units and of the same type as the unit you wish to convert
 %   to.
 
-p = inputParser;
+p = advInputParser;
 p.addRequired('Merge',@isstruct);
 p.addRequired('field',@isstr);
 p.addParameter('time','UTC',@isstr);
@@ -30,10 +30,11 @@ p.addParameter('alt','ALTP',@isstr);
 p.addParameter('lat','LATITUDE',@isstr);
 p.addParameter('lon','LONGITUDE',@isstr);
 p.addParameter('unit','');
+p.addFlag('utc2datenum');
 p.addParameter('DEBUG_LEVEL',1,@(x) (isscalar(x) && isnumeric(x)));
 
 p.parse(Merge,field,varargin{:});
-pout = p.Results;
+pout = p.AdvResults;
 Merge = pout.Merge;
 field = pout.field;
 utc_field = pout.time;
@@ -41,6 +42,7 @@ alt_field = pout.alt;
 lon_field = pout.lon;
 lat_field = pout.lat;
 unit_out = pout.unit;
+do_utc_to_datenum = pout.utc2datenum;
 
 E = JLLErrors;
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
@@ -83,6 +85,12 @@ if ~isempty(regexpi(field, 'longitude', 'ONCE'))
     data = lon_fix(data);
 end
 
+% Let the user specify UTC as the main input, in which case check if we
+% should convert it to a date number
+if regcmpi(field, 'utc') && do_utc_to_datenum
+    data = convert_utc_to_datenum(data, Merge.metadata.date);
+end
+
 % If a unit conversion is requested, try to do so
 if ~isempty(unit_out)
     data = convert_units(data, Merge.Data.(field).Unit, unit_out);
@@ -90,25 +98,28 @@ end
 
 if nargout > 5; varargout{5} = fills; end
 
-if nargout > 1; 
+if nargout > 1
     utc = Merge.Data.(utc_field).Values; 
+    if do_utc_to_datenum
+        utc = convert_utc_to_datenum(utc, Merge.metadata.date);
+    end
     %utcfills = eval(sprintf('Merge.Data.%s.Fill',utcfield));
     %utc(utc==utcfills) = NaN; % There shouldn't ever be fill values in the UTC field
     varargout{1} = utc;
 end
-if nargout > 2; 
+if nargout > 2
     alt = Merge.Data.(alt_field).Values; 
     altfills = Merge.Data.(alt_field).Fill;
     alt(alt==altfills) = NaN;
     varargout{2} = alt;
 end
-if nargout > 4; 
+if nargout > 4
     lat = Merge.Data.(lat_field).Values;
     latfills = Merge.Data.(lat_field).Fill;
     lat(lat==latfills) = NaN;
     varargout{4} = lat;
 end
-if nargout > 3; 
+if nargout > 3
     lon = Merge.Data.(lon_field).Values;
     lonfills = Merge.Data.(lon_field).Fill;
     lon(lon==lonfills) = NaN;
@@ -122,4 +133,8 @@ end
 
 function lon = lon_fix(lon)
 lon(lon>180) = lon(lon>180) - 360;
+end
+
+function utc = convert_utc_to_datenum(utc, merge_date)
+utc = utc / 86400 + datenum(merge_date);
 end

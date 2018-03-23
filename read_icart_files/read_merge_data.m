@@ -34,6 +34,12 @@ single_file = 0;
 % The date of the file to run, only has an effect if single file is set to 1
 filedate = '07/01/2011';
 
+% Controls what to do if there is a mismatch between the list of variables
+% at the beginning of the icartt file and the header of the data table.
+% 'exising' will use the list, 'header' the header, and an empty string
+% will prompt you each time.
+field_mismatch_preference = 'header';
+
 % Level of output to console; 0 = nothing, 1 = minimal, 2 = all messages
 DEBUG_LEVEL = 1;
 
@@ -101,12 +107,12 @@ numfiles = numel(merge_files);
 for a = 1:numfiles
     if DEBUG_LEVEL > 0; fprintf('Reading in file %s\n', merge_files(a).name); end
     
-    [Merge, header, DataTable] = read_icartt_file(fullfile(icart_dir, merge_files(a).name));
+    [Merge, header, DataTable] = read_icartt_file(fullfile(icart_dir, merge_files(a).name), field_mismatch_preference);
     
     % Save the day's structure, table, and header as a .mat file
     if save_bool
-        file_date = regexprep(curr_date,'/','');
-        if user_select_dir && ~isempty(user_savename);
+        file_date = regexprep(Merge.metadata.date,'\-','_');
+        if user_select_dir && ~isempty(user_savename)
             savename = [user_savename,'_',file_date];
         else
             savename = [location, '_', data_type, '_', file_date];

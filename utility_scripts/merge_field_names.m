@@ -94,7 +94,7 @@ end
 % expecting a field to be no2_lif and getting one that is NO2_LIF.  ADD ANY
 % ADDITIONAL FIELDS TO RETURN HERE.
 
-return_fields = {'longitude','latitude','pressure_alt', 'gps_alt', 'radar_alt', 'temperature', 'pressure','theta', 'h2o', 'no2_lif', 'no2_ncar','acn','hcn','co'...
+return_fields = {'utc','longitude','latitude','pressure_alt', 'gps_alt', 'radar_alt', 'temperature', 'pressure','theta', 'h2o', 'no2_lif', 'no2_ncar','acn','hcn','co'...
     'aerosol_extinction', 'aerosol_extinction_green', 'aerosol_scattering', 'aerosol_scattering_green', 'abs_angstr_exp','scat_angstr_exp','aerosol_ssa',...
     'aerosol_dry_ssa', 'profile_numbers','ground_no2','ground_utc'}';
 
@@ -116,6 +116,7 @@ main_dir = fullfile('/Volumes','share2','USERS','LaughnerJ','CampaignMergeMats')
 
 % DISCOVER-MD
 if ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_name,'md'))
+    Names.utc = 'UTC';
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
     Names.pressure_alt = 'ALTP';
@@ -146,6 +147,7 @@ if ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_name
     
     % DISCOVER-CA
 elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_name,'ca'))
+    Names.utc = 'UTC';
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
     Names.pressure_alt = 'ALTP';
@@ -176,6 +178,7 @@ elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_
     
     % DISCOVER-TX
 elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_name,'tx'))
+    Names.utc = 'UTC';
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
     Names.pressure_alt = 'ALTP';
@@ -207,6 +210,7 @@ elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_
     
     % DISCOVER-CO
 elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_name,'co'))
+    Names.utc = 'UTC';
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
     Names.pressure_alt = 'ALTP';
@@ -238,6 +242,7 @@ elseif ~isempty(regexpi(campaign_name,'discover')) && ~isempty(regexpi(campaign_
     
     % SEAC4RS
 elseif ~isempty(regexpi(campaign_name,'seac4rs')) || ~isempty(regexpi(campaign_name,'seacers'));
+    Names.utc = 'UTC';
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
     Names.pressure_alt = 'ALTP';
@@ -270,6 +275,7 @@ elseif ~isempty(regexpi(campaign_name,'seac4rs')) || ~isempty(regexpi(campaign_n
     
     % DC3 (not to be confused with the DC8 aircraft)
 elseif ~isempty(regexpi(campaign_name,'dc3'))
+    Names.utc = 'UTC';
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
     Names.pressure_alt = 'ALTP';
@@ -298,6 +304,7 @@ elseif ~isempty(regexpi(campaign_name,'dc3'))
     
     % ARCTAS (-B and -CARB)
 elseif ~isempty(regexpi(campaign_name,'arctas'))
+    Names.utc = 'UTC';
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
     Names.pressure_alt = 'ALTP';
@@ -334,6 +341,7 @@ elseif ~isempty(regexpi(campaign_name,'arctas'))
     
     % INTEX-B
 elseif ~isempty(regexpi(campaign_name,'intex')) && ~isempty(regexpi(campaign_name,'b'))
+    Names.utc = 'UTC';
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
     Names.pressure_alt = 'ALTITUDE_PRESSURE';
@@ -362,6 +370,7 @@ elseif ~isempty(regexpi(campaign_name,'texaqs','once'))
     
     % SOAS
 elseif ~isempty(regexpi(campaign_name, 'soas', 'once'))
+    Names.utc = 'UTC';
     Names.longitude = 'LONGITUDE';
     Names.latitude = 'LATITUDE';
     Names.gps_alt = 'GpsAlt';
@@ -378,7 +387,6 @@ elseif ~isempty(regexpi(campaign_name, 'soas', 'once'))
 else
     error(E.badinput('Could not parse the given campaign name - see help for this function for suggestions of proper campaign names.'));
 end
-
 
 % If there is only one range file, return it. If there are multiple
 % options, ask the user which one to use (and don't continue until the
