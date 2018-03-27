@@ -82,7 +82,7 @@ pout = p.Results;
 time_range = pout.time_range/24; % convert from hours to days so that it can be used directly with datenums
 
 pandora_dnums = pandora_gmt_to_datenum(remove_merge_fills(Merge, 'DateGMT'));
-pandora_no2 = remove_merge_fills(Merge, 'NO2');
+pandora_no2 = remove_merge_fills(Merge, pandora_no2_fieldname(Merge));
 
 xx_valid = filter_good_pandora_obs(Merge);
 

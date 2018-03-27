@@ -77,11 +77,46 @@ function [profiles_final, profiles_struct] = verify_sat_vs_aircraft_vcds(Data, M
 %
 %   Integration parameters:
 %
+%       'prof_extension' - a char array, either 'extrap' (default), 'wrf',
+%       or 'geos' that controls how to extend profiles that do not reach
+%       the tropopause or the surface. 'extrap' will extrapolate the top
+%       and bottom 10 measurements as in Hains et al. 2010; 'wrf' or 'geos'
+%       will use WRF-Chem or GEOS-Chem profiles more similarly to Lamsal et
+%       al. 2014.
+%
 %       'wrf_prof_mode' - a char array, either an empty one, 'monthly', or
 %       'daily' that determines which WRF output to use to extrapolate the
 %       aircraft profiles to the tropopause and the surface. Extrapolation
 %       is done as in Lamsal et al. 2014. If empty, the mode is set to be
 %       the same as the profile mode used to generate the BEHR Data struct.
+%       Only has an effect if 'prof_extension' is set to 'wrf'.
+%
+%       'gc_data_dir' - the directory to load GEOS-Chem ND51 diagnostic
+%       output files from. These are currently assumed to be translated
+%       from binary punch format into netCDF by gc_nd51_to_ncdf.py in the
+%       GEOS-Chem-Utils repo (rather than directly output to netCDF by
+%       GEOS-Chem). Only has an effect is 'prof_extension' is set to
+%       'geos'.
+%
+%       'gc_data_year' - the year for which GEOS-Chem data is available. By
+%       default, this looks for GEOS-Chem data from the exact day that the
+%       aircraft flew. If GEOS-Chem data is only available for one year,
+%       pass that year (as a number) here to always used that year. Only
+%       has an effect if 'prof_extension' is set to 'geos'.
+%
+%       'detection_limit' - the detection limit of the NO2 instrument used,
+%       given in mixing ratio (parts-per-part). Default is 3e-12, i.e. 3
+%       pptv, as in Hains et al. 2010. This is used in extrapolating; if
+%       the median of the top ten values is below this limit, it is set to
+%       half this limit. Only used if 'prof_extension' is set to 'extrap'.
+%
+%       'ignore_top_check' - if true (default) the median of the top ten
+%       NO2 measurements is checked if it is greater than 100 pptv. If so,
+%       the profile is rejected on the assumption that it did not sample
+%       the free troposphere. Set to false to include such profiles, though
+%       be aware that extrapolating such values may dramatically
+%       overestimate the total NO2 column. Only used if 'prof_extension' is
+%       set to 'extrap'.
 
 E = JLLErrors;
 
@@ -151,9 +186,12 @@ profiles_struct = integrate_profiles(profiles_struct, Data, varargin{:});
 
 profiles_final = format_output(profiles_struct);
 
-%%%%%%%%%%%%%%%%%%%%%%%
-% NESTED SUBFUNCTIONS %
-%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%
+% PRIMARY SUBFUNCTIONS %
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+    % These following two functions are nested to share the
+    % "merge_variable_names" and "merge_variables" values.
 
     function profs = collect_profiles_by_number(Merge, campaign)
         merge_names = merge_field_names(campaign);
@@ -232,33 +270,6 @@ profiles_final = format_output(profiles_struct);
             end
         end
     end
-
-end
-
-function no2_field = set_no2_field(no2_field, campaign)
-merge_names = merge_field_names(campaign);
-% If an empty string is passed, try to find the valid name in those defined
-% for this campaign.
-if isempty(no2_field)
-    if ~isempty(merge_names.no2_lif)
-        no2_field = 'no2_lif';
-    else
-        no2_field = 'no2_ncar';
-    end
-    
-    if isempty(merge_names.(no2_field))
-        E.badinput('No NO2 field is defined in the Merge names for %s', campaign);
-    end
-% If something is passed, make sure it's something that is present in the
-% Merge names
-elseif ~isfield(merge_names, no2_field)
-    E.badinput('''no2_field'' must be one of: %s', strjoin(fieldnames(merge_names), ', '));
-% If it's present, make sure it's an actual Merge field name and not an
-% empty string.
-elseif isempty(merge_names.(no2_field))
-    E.badinput('The "%s" NO2 field is not defined in the Merge names for %s', no2_field, campaign);
-end
-
 
 end
 
@@ -392,17 +403,16 @@ end
 
 
 function profs = integrate_profiles(profs, Data, varargin)
+E = JLLErrors;
+
 p = inputParser;
-p.addParameter('wrf_prof_mode', '');
+p.addParameter('prof_extension', 'extrap');
 p.addParameter('DEBUG_LEVEL',2);
 p.KeepUnmatched = true;
 p.parse(varargin{:});
 pout = p.Results;
 
-wrf_prof_mode = pout.wrf_prof_mode;
-if isempty(wrf_prof_mode)
-    wrf_prof_mode = Data(1).BEHRProfileMode;
-end
+prof_extension_mode = pout.prof_extension;
 
 DEBUG_LEVEL = pout.DEBUG_LEVEL;
 
@@ -413,58 +423,40 @@ DEBUG_LEVEL = pout.DEBUG_LEVEL;
 % the WRF data now since it might take a while. The profile UTC should have
 % been converted to date numbers, that will tell us which WRF file is
 % closest in time to the aircraft profile.
-wrf_data = load_wrf_profiles(nanmean(profs(1).utc), wrf_prof_mode);
+
 
 keep_profs = true(size(profs));
 
 for i_prof = 1:numel(profs)
-    % First we need to get the WRF profiles that overlap the aircraft
-    % profile. Fortunately, we can use the same logic as we did with OMI
-    % pixels.
-    xx_pix = pixels_overlap_profile(wrf_data.loncorn, wrf_data.latcorn, profs(i_prof).longitude, profs(i_prof).latitude, ~isnan(profs(i_prof).no2), varargin{:});
-    wrf_avg_no2 = nanmean(wrf_data.no2(:,xx_pix),2);
-    wrf_avg_pres = nanmean(wrf_data.pres(:,xx_pix),2);
+    
     
     % Next we need to bin the profiles to the OMI pressure levels. (This
     % may need updated once we push the tropopause update.)
     [binned_prof, binned_pres] = bin_omisp_pressure(profs(i_prof).pressure, profs(i_prof).no2);
     
-    % We'll need the WRF profile interpolated to the profile pressure for
-    % both the top levels and the extrapolation to the ground. Like Bucsela
-    % et al. 2008, do log-log interpolation since pressure and
-    % concentration both roughly have exponential relationships to altitude
+    if any(strcmpi(prof_extension_mode, {'wrf','geos'}))
+        [binned_prof, binned_pres, is_appended_or_interpolated, keep_profs(i_prof)] = append_model_to_profile(binned_prof, binned_pres, profs(i_prof), Data, prof_extension_mode, varargin{:});
+    elseif strcmpi(prof_extension_mode, 'extrap')
+        [binned_prof, binned_pres, is_appended_or_interpolated, keep_profs(i_prof)] = extrapolate_profile(binned_prof, binned_pres, profs(i_prof), varargin{:});
+    else
+        E.badinput('Profile extension mode "%s" not recognized', prof_extension_mode);
+    end
     
-    % If any of wrf_avg_pres is a NaN, that means that we are outside the
-    % WRF domain, and so in this mode, cannot integrate this profile. (If I
-    % later implement extrapolation for comparison, then such profiles can
-    % be included.)
-    if any(isnan(wrf_avg_pres))
-        keep_profs(i_prof) = false;
-        if DEBUG_LEVEL > 0
-            fprintf('Profile %s removed because it falls outside the WRF domain\n', profs(i_prof).profile_id);
-        end
+    if ~keep_profs(i_prof)
         continue
     end
-    wrf_interp_no2 = exp(interp1(log(wrf_avg_pres), log(wrf_avg_no2), log(binned_pres), 'linear', 'extrap'));
     
-    % We can fill in any points above the top of the measured profile
-    % simply by interpolating the average WRF profile to the binned
-    % pressures. Keep track of which parts of the profiles came from WRF
-    % and which from the aircraft.
-    is_from_wrf = false(size(binned_prof));
-    last_non_nan = find(~isnan(binned_prof), 1, 'last');
-    binned_prof(last_non_nan+1:end) = wrf_interp_no2(last_non_nan+1:end);
-    is_from_wrf(last_non_nan+1:end) = true;
-    
-    % Now we need to extrapolate to the surface. Lamsal et al. 2014 does
-    % this by basically using the model profile ratio of the profile level
-    % where there is aircraft data to the desired pressure level,
-    % essentially using the modeled profile shape.
-    first_non_nan = find(~isnan(binned_prof), 1, 'first');
-    first_nans = 1:(first_non_nan-1);
-    model_ratios = wrf_interp_no2(first_nans) ./ wrf_interp_no2(first_non_nan);
-    binned_prof(first_nans) = model_ratios .* binned_prof(first_non_nan);
-    is_from_wrf(first_nans) = true;
+    % There are rare cases where some model levels do not have
+    % measurements. I assume this happens when with the 2-cell TD-LIF
+    % instrument if the plane passes through an altitude bin while NO2
+    % wasn't being measured. In any case, fill them in, but issue a warning
+    % so we're aware of it.
+    if any(isnan(binned_prof))
+        warning('profile_integration:remaining_nans', 'NaNs remain in profile %s after extrapolating to surface and tropopause. Filling in by log-log interpolation', profs(i_prof).profile_id);
+        is_nans = isnan(binned_prof);
+        binned_prof(is_nans) = exp(interp1(log(binned_pres(~is_nans)), log(binned_prof(~is_nans)), log(binned_pres(is_nans))));
+        is_appended_or_interpolated(is_nans) = 2;
+    end
     
     % Finally we can integrate the model profile. By default, use the same
     % integrator as in the BEHR AMF calculation. We need to loop over all
@@ -477,7 +469,9 @@ for i_prof = 1:numel(profs)
     % being integrated.
     profs(i_prof).binned_profile = binned_prof;
     profs(i_prof).binned_pressure = binned_pres;
-    profs(i_prof).from_wrf = is_from_wrf;
+    % A value of 1 means it was appended by either extrapolation or WRF
+    % insertion. A value of 2 means it was interpolated.
+    profs(i_prof).is_appended_or_interpolated = is_appended_or_interpolated;
 end
 
 profs(~keep_profs) = [];
@@ -485,6 +479,161 @@ profs(~keep_profs) = [];
 end
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% FUNCTIONS THAT EXTEND PROFILES TO SURFACE AND TROPOPAUSE %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+function [binned_prof, binned_pres, was_extrap, keep_this_prof] = extrapolate_profile(binned_prof, binned_pres, profs, varargin)
+p = inputParser;
+p.addParameter('detection_limit',3e-12);
+p.addParameter('ignore_top_check',false);
+p.addParameter('DEBUG_LEVEL',2);
+p.KeepUnmatched = true;
+p.parse(varargin{:});
+pout = p.Results;
+
+detection_limit = pout.detection_limit;
+ignore_top_check = pout.ignore_top_check;
+DEBUG_LEVEL = pout.DEBUG_LEVEL;
+
+was_extrap = zeros(size(binned_prof));
+keep_this_prof = true;
+
+% Following Hains et al. 2010, extrapolate the top ten measurements to the
+% top of the troposphere and the bottom ten to the bottom pressure bin.
+[~, sort_permvec] = sort(profs.pressure_alt);
+sorted_no2 = profs.no2(sort_permvec);
+sorted_no2(isnan(sorted_no2)) = [];
+
+bottom_ten_med = median(sorted_no2(1:10));
+top_ten_med = median(sorted_no2(end-9:end));
+
+if top_ten_med > 100e-12 && ~ignore_top_check
+    % If the median of the top ten points is greater than 100 pptv, we may
+    % not have gotten out of the boundary layer.
+    fprintf('Profile %s removed because median of top ten points greater than 100 pptv\n', profs.profile_id);
+    keep_this_prof = false;
+    return
+elseif top_ten_med < detection_limit
+    % From Hains et al., they assume that if the NO2 concentration is below
+    % the detection limit, it is equal to half the detection limit. By
+    % default, this assumes the 3 pptv detection limit of the LIF from
+    % INTEX-B.
+    top_ten_med = 0.5*detection_limit;
+end
+
+last_not_nan = find(~isnan(binned_prof), 1, 'last');
+top_nans = (last_not_nan+1):numel(binned_prof);
+binned_prof(top_nans) = top_ten_med;
+was_extrap(top_nans) = 1;
+
+first_not_nan = find(~isnan(binned_prof), 1, 'first');
+bottom_nans = 1:(first_not_nan-1);
+binned_prof(bottom_nans) = bottom_ten_med;
+was_extrap(bottom_nans) = 1;
+
+end
+
+function [binned_prof, binned_pres, is_from_model, keep_this_prof] = append_model_to_profile(binned_prof, binned_pres, profs, Data, model, varargin)
+E = JLLErrors;
+
+p = inputParser;
+p.addParameter('wrf_prof_mode','');
+p.addParameter('DEBUG_LEVEL', 2);
+p.KeepUnmatched = true;
+p.parse(varargin{:});
+pout = p.Results;
+
+wrf_prof_mode = pout.wrf_prof_mode;
+if isempty(wrf_prof_mode)
+    wrf_prof_mode = Data(1).BEHRProfileMode;
+end
+DEBUG_LEVEL = pout.DEBUG_LEVEL;
+
+if strcmpi(model, 'wrf')
+    model_data = load_wrf_profiles(nanmean(profs.utc), wrf_prof_mode);
+elseif strcmpi(model, 'geos')
+    model_data = load_gc_profiles(nanmean(profs.utc), varargin{:});
+else
+    E.badinput('No method defined to load data for model type "%s"', model);
+end
+
+% First we need to get the model profiles that overlap the aircraft
+% profile. Fortunately, we can use the same logic as we did with OMI
+% pixels.
+xx_pix = pixels_overlap_profile(model_data.loncorn, model_data.latcorn, profs.longitude, profs.latitude, ~isnan(profs.no2), varargin{:});
+model_avg_no2 = nanmean(model_data.no2(:,xx_pix),2);
+model_avg_pres = nanmean(model_data.pres(:,xx_pix),2);
+is_from_model = zeros(size(binned_prof));
+keep_this_prof = true;
+% We'll need the model profile interpolated to the profile pressure for
+% both the top levels and the extrapolation to the ground. Like Bucsela
+% et al. 2008, do log-log interpolation since pressure and
+% concentration both roughly have exponential relationships to altitude
+
+% If any of wrf_avg_pres is a NaN, that means that we are outside the
+% WRF domain, and so in this mode, cannot integrate this profile. (If I
+% later implement extrapolation for comparison, then such profiles can
+% be included.)
+if any(isnan(model_avg_pres))
+    keep_this_prof = false;
+    if DEBUG_LEVEL > 0
+        fprintf('Profile %s removed because it falls outside the WRF domain\n', profs.profile_id);
+    end
+    return
+end
+wrf_interp_no2 = exp(interp1(log(model_avg_pres), log(model_avg_no2), log(binned_pres), 'linear', 'extrap'));
+
+% We can fill in any points above the top of the measured profile
+% simply by interpolating the average model profile to the binned
+% pressures. Keep track of which parts of the profiles came from WRF
+% and which from the aircraft.
+
+last_non_nan = find(~isnan(binned_prof), 1, 'last');
+binned_prof(last_non_nan+1:end) = wrf_interp_no2(last_non_nan+1:end);
+is_from_model(last_non_nan+1:end) = 1;
+
+% Now we need to extrapolate to the surface. Lamsal et al. 2014 does
+% this by basically using the model profile ratio of the profile level
+% where there is aircraft data to the desired pressure level,
+% essentially using the modeled profile shape.
+first_non_nan = find(~isnan(binned_prof), 1, 'first');
+first_nans = 1:(first_non_nan-1);
+model_ratios = wrf_interp_no2(first_nans) ./ wrf_interp_no2(first_non_nan);
+binned_prof(first_nans) = model_ratios .* binned_prof(first_non_nan);
+is_from_model(first_nans) = 1;
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+% OTHER HELPER FUNCTIONS %
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+function no2_field = set_no2_field(no2_field, campaign)
+merge_names = merge_field_names(campaign);
+% If an empty string is passed, try to find the valid name in those defined
+% for this campaign.
+if isempty(no2_field)
+    if ~isempty(merge_names.no2_lif)
+        no2_field = 'no2_lif';
+    else
+        no2_field = 'no2_ncar';
+    end
+    
+    if isempty(merge_names.(no2_field))
+        E.badinput('No NO2 field is defined in the Merge names for %s', campaign);
+    end
+% If something is passed, make sure it's something that is present in the
+% Merge names
+elseif ~isfield(merge_names, no2_field)
+    E.badinput('''no2_field'' must be one of: %s', strjoin(fieldnames(merge_names), ', '));
+% If it's present, make sure it's an actual Merge field name and not an
+% empty string.
+elseif isempty(merge_names.(no2_field))
+    E.badinput('The "%s" NO2 field is not defined in the Merge names for %s', no2_field, campaign);
+end
+
+
+end
 
 function [sp_no2, behr_no2] = filter_bad_pixels(Data)
 Data = omi_pixel_reject(Data, 'detailed', struct('cloud_type', 'omi', 'cloud_frac', 0.2, 'row_anom_mode', 'XTrackFlags', 'check_behr_amf', true));
@@ -513,19 +662,91 @@ wrf_data.pres = permute(wrf_data.pres, [3 1 2]);
 
 end
 
+function gc_data = load_gc_profiles(aircraft_date, varargin)
+p = inputParser;
+p.addParameter('gc_data_dir','');
+p.addParameter('gc_data_year',[]);
+p.KeepUnmatched = true;
+
+p.parse(varargin{:});
+pout = p.Results;
+
+gc_data_dir = pout.gc_data_dir;
+gc_data_year = pout.gc_data_year;
+
+% If GEOS-chem year not given, assume that we have GEOS-Chem data for that
+% specific year. Otherwise, assume we only have the year give.
+if isempty(gc_data_year)
+    gc_data_year = year(aircraft_date);
+end
+
+gc_date = datenum(gc_data_year, month(aircraft_date), day(aircraft_date));
+
+
+% We want to use diagnostic 51 data output during OMI overpass. In my
+% GEOS-Chem run, these are for between 12 and 14 local standard time, and
+% are named ts_12_14_satellite.yyyymmdd.bpch, then translated to netCDF
+% files by gc_nd51_to_ncdf.py in the GEOS-Chem-Utils repo.
+gc_filename = fullfile(gc_data_dir, sprintf('ts_12_14_satellite.%s.nc', datestr(gc_date, 'yyyymmdd')));
+
+% We need the NO2 (converted to unscaled mixing ratio) along with lat/lon
+% and pressure for coordinates. We will mimic the structure that we get
+% from loading the WRF data so that this function can just be swapped with
+% the WRF loading function.
+gc_lonbounds = ncread(gc_filename, 'longitude_bounds');
+gc_latbounds = ncread(gc_filename, 'latitude_bounds');
+
+[gc_data.loncorn, gc_data.latcorn] = geos_latlon_bounds_to_corners(gc_lonbounds, gc_latbounds, 'format', 'pixel');
+
+gc_no2 = ncread(gc_filename, 'TIME-SER_NO2');
+gc_no2_units = ncreadatt(gc_filename, 'TIME-SER_NO2', 'units');
+gc_data.no2 = convert_units(gc_no2, gc_no2_units, 'ppp');
+
+% GEOS-Chem pressure is given on the edges of the grid cells, but the ND51
+% diagnostic does not seem to provide the top most level. To get pressure
+% at the center of the grid cells, we'll append the top 0 hPa level that
+% is omitted (according to the "Ap" global attribute)
+
+extra_pressure = zeros(size(gc_no2,1), size(gc_no2,2));
+gc_pres = cat(3, ncread(gc_filename, 'PEDGE-$_PSURF'), extra_pressure);
+gc_pres_units = ncreadatt(gc_filename, 'PEDGE-$_PSURF', 'units');
+gc_pres = convert_units(gc_pres, gc_pres_units, 'hPa');
+gc_data.pres = (gc_pres(:,:,1:end-1,:) + gc_pres(:,:,2:end,:))/2;
+
+% Permute the NO2 and pressure profiles to make indexing easier. They
+% should not have length(time) > 1
+gc_data.no2 = permute(gc_data.no2, [3,1,2]);
+gc_data.pres = permute(gc_data.pres, [3,1,2]);
+
+end
+
 function [profs_final, profs] = format_output(profs)
 % If all the profiles have been removed, then we need to return an empty
 % structure that matches the organization of what would be returned if
 % there was at least one profile.
+profs_req_fields = {'longitude', 'latitude', 'pressure', 'pressure_alt', 'radar_alt', 'no2', 'utc', 'profile_id', 'date', 'sp_no2', 'behr_no2', 'omi_area',...
+        'globe_terpres', 'matched_pixels', 'air_no2', 'binned_profile', 'binned_pressure', 'is_appended_or_interpolated'};
 if isempty(profs)
     profs_final = struct('sp_no2', [], 'behr_no2', [], 'air_no2', [], 'omi_area', [], 'profile_ids', {{}}, 'profile_dates', {{}}, 'profile_lon', [], 'profile_lat', []);
     % Make sure that profs always has the same fields no matter when the
     % function returns. Update this as necessary if adding more fields to
     % profs.
-    profs = make_empty_struct_from_cell({'longitude', 'latitude', 'pressure', 'pressure_alt', 'radar_alt', 'no2', 'utc', 'profile_id', 'date', 'sp_no2', 'behr_no2', 'omi_area',...
-        'globe_terpres', 'matched_pixels', 'air_no2', 'binned_profile', 'binned_pressure', 'from_wrf'});
+    profs = make_empty_struct_from_cell(profs_req_fields);
     return
+else
+    % Check that profs has the fields we're expecting - if not, we may need
+    % to update this function.
+    actual_fields = fieldnames(profs);
+    % strcmp is very particular that arrays be the same size, so force both
+    % to be column vectors.
+    actual_fields = actual_fields(:);
+    profs_req_fields = profs_req_fields(:);
+    if ~isequal(size(actual_fields), size(profs_req_fields)) || any(~strcmp(actual_fields, profs_req_fields))
+        field_list = sprintf('  Expected: %s\n  Actual: %s\n', strjoin(profs_req_fields, ', '),  strjoin(fieldnames(profs), ', '));
+        warning('The fieldnames in PROFS is not what''s expected in FORMAT_OUTPUT(). This may mean you need to update the profs_req_fields variable in this function.\n%s', field_list);
+    end
 end
+
 
 % The NO2 columns are easy, just concatenate all the profiles elements into
 % a column vector
